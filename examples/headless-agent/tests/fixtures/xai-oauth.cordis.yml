@@ -1,7 +1,7 @@
 - id: agent-default-model
   config:
     provider: xai-oauth
-    model: grok-4.5
+    model: grok-4.6
 
 - id: llm-xai
   config:

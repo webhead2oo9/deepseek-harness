@@ -28,6 +28,15 @@ export const DEFAULT_XAI_MAX_TOKENS = 32_768
 export const DEFAULT_XAI_STREAM_IDLE_TIMEOUT_MS = 300_000
 /** Default lifetime of an authenticated xAI model catalog. */
 export const DEFAULT_XAI_MODEL_CACHE_TTL_MS = 300_000
+/**
+ * Responses-family reasoning levels for a discovered model that pi-ai has not
+ * cataloged. Matches grok-4.5: `low` / `medium` / `high`, with no `off`.
+ */
+export const DEFAULT_XAI_REASONING_EFFORTS = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const satisfies Exclude<PiAiModelProfile['reasoningEfforts'], undefined | false>
 
 /** Validated xAI API and model parameters. */
 export interface XaiConnectionOptions {
@@ -108,19 +117,42 @@ function reasoningEfforts(model: Model<Api>): Exclude<PiAiModelProfile['reasonin
   ]))
 }
 
+/** Prefer an exact id, then a live alias that names a known catalog model. */
+function knownMetadata(
+  model: XaiCatalogModel,
+  known: ReadonlyMap<string, Model<Api>>,
+): Model<Api> | undefined {
+  const direct = known.get(model.id)
+  if (direct !== undefined) return direct
+  for (const alias of model.aliases) {
+    const match = known.get(alias)
+    if (match !== undefined) return match
+  }
+  return undefined
+}
+
+/** Live ids without a pi-ai entry inherit the Responses-family levels. */
+function modelReasoning(
+  metadata: Model<Api> | undefined,
+): Exclude<PiAiModelProfile['reasoningEfforts'], undefined> {
+  if (metadata === undefined) return { ...DEFAULT_XAI_REASONING_EFFORTS }
+  /* v8 ignore next -- installed xAI metadata currently contains no non-reasoning language model */
+  return metadata.reasoning ? reasoningEfforts(metadata) : false
+}
+
 function modelProfile(
   model: XaiCatalogModel,
   known: ReadonlyMap<string, Model<Api>>,
   options: XaiConnectionOptions,
 ): PiAiModelProfile {
-  const metadata = known.get(model.id)
+  const metadata = knownMetadata(model, known)
   return {
     id: model.id,
     name: displayName(model),
     contextWindow: metadata?.contextWindow ?? options.defaultContextWindow,
     maxTokens: metadata?.maxTokens ?? options.defaultMaxTokens,
     input: [...model.inputModalities],
-    reasoningEfforts: metadata?.reasoning === true ? reasoningEfforts(metadata) : false,
+    reasoningEfforts: modelReasoning(metadata),
   }
 }
 

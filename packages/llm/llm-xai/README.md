@@ -13,7 +13,7 @@ The login uses the public xAI client identity and scopes maintained by `@earendi
     modelCacheTtlMs: 300000
 ```
 
-`baseURL` defaults to `https://api.x.ai/v1`. Production configuration accepts only HTTPS `x.ai` hosts so a stored bearer token cannot be redirected to another origin; HTTP loopback endpoints remain available for tests. Discovered models inherit static pi-ai capacity and reasoning metadata when available, with configurable conservative fallbacks for newer model ids.
+`baseURL` defaults to `https://api.x.ai/v1`. Production configuration accepts only HTTPS `x.ai` hosts so a stored bearer token cannot be redirected to another origin; HTTP loopback endpoints remain available for tests. Discovered models inherit static pi-ai capacity and reasoning metadata when available. A live catalog id that pi-ai has not cataloged uses the configured capacity fallbacks and the Responses-family `low`, `medium`, and `high` reasoning levels. A live catalog alias that matches a known pi-ai model id inherits that entry.
 
 This route is intended for personal subscription access. xAI controls account eligibility and may reject OAuth API access for accounts or subscription tiers that do not include it.
 
@@ -50,5 +50,5 @@ Completed assistant and tool content appends after the prior request prefix. Pro
 ## Known Limitations and Deferred Work
 
 - xAI account and subscription eligibility are provider-controlled; a successful browser authorization may still be followed by an API authorization error.
-- Newly discovered model ids use configured fallback capacities and expose no reasoning selector until pi-ai publishes matching metadata.
+- A live catalog id with no pi-ai entry is offered as a reasoning model. A later non-reasoning xAI chat id keeps that selector until pi-ai catalogs it.
 - The device flow provides no account profile fields, so the signed-in card cannot display an email or subscription name.

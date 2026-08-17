@@ -130,16 +130,17 @@ async function xaiSnapshotServer(): Promise<XaiSnapshotServer> {
     request.on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
       const path = request.url ?? ''
+      const parsedBody = body.length === 0 ? undefined : JSON.parse(body) as JsonObject
       requests.push({
         method: request.method ?? '',
         path,
         authorization: request.headers.authorization,
-        body: body.length === 0 ? undefined : JSON.parse(body) as JsonObject,
+        body: parsedBody,
       })
       if (request.method === 'GET' && path === '/v1/language-models') {
         response.writeHead(200, { 'content-type': 'application/json' })
         response.end(JSON.stringify({
-          models: [{ id: 'grok-4.5', aliases: ['grok-latest'], input_modalities: ['text', 'image'] }],
+          models: [{ id: 'grok-4.6', aliases: ['grok-latest'], input_modalities: ['text', 'image'] }],
         }))
         return
       }
@@ -149,7 +150,7 @@ async function xaiSnapshotServer(): Promise<XaiSnapshotServer> {
           content: [{ type: 'output_text', text: 'XAI_SNAPSHOT_OK', annotations: [] }],
         }
         const completed = {
-          id: 'xai-response-1', object: 'response', created_at: 0, status: 'completed', model: 'grok-4.5',
+          id: 'xai-response-1', object: 'response', created_at: 0, status: 'completed', model: 'grok-4.6',
           output: [item],
           usage: {
             input_tokens: 5, output_tokens: 3, total_tokens: 8,
@@ -169,8 +170,13 @@ async function xaiSnapshotServer(): Promise<XaiSnapshotServer> {
           { type: 'response.output_item.done', output_index: 0, item },
           { type: 'response.completed', response: completed },
         ]
-        response.writeHead(200, { 'content-type': 'text/event-stream' })
-        response.end(`${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`)
+        const send = (): void => {
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.end(`${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`)
+        }
+        const titleRequest = body.includes('Create a concise title for an AI coding-assistant session')
+        if (titleRequest) setTimeout(send, 100)
+        else send()
         return
       }
       response.writeHead(404, { 'content-type': 'application/json' })
@@ -315,14 +321,23 @@ describe('headless stream-json snapshots', () => {
         prepare: async (cwd) => {
           const home = join(cwd, '.dsh')
           await mkdir(home, { recursive: true })
-          await writeFile(join(home, '.model-auth.json'), `${JSON.stringify({
-            version: 0,
-            providers: {
-              'xai-oauth': {
-                type: 'oauth', access: 'xai-snapshot-access', refresh: 'xai-snapshot-refresh', expires: 4_102_444_800_000,
+          await Promise.all([
+            writeFile(join(home, '.model-auth.json'), `${JSON.stringify({
+              version: 0,
+              providers: {
+                'xai-oauth': {
+                  type: 'oauth', access: 'xai-snapshot-access', refresh: 'xai-snapshot-refresh', expires: 4_102_444_800_000,
+                },
               },
-            },
-          })}\n`)
+            })}\n`),
+            writeFile(join(home, 'settings.yaml'), [
+              'agent-default-model:',
+              '  provider: xai-oauth',
+              '  model: grok-4.6',
+              '  reasoningEffort: medium',
+              '',
+            ].join('\n')),
+          ])
         },
         inspect: async (cwd) => {
           const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
@@ -346,8 +361,10 @@ describe('headless stream-json snapshots', () => {
         ['POST', '/v1/responses'],
       ])
       expect(server.requests.every(request => request.authorization === 'Bearer xai-snapshot-access')).toBe(true)
-      expect(server.requests[1]?.body).toMatchObject({ model: 'grok-4.5', stream: true })
-      expect(server.requests[2]?.body).toMatchObject({ model: 'grok-4.5', stream: true })
+      const responseBodies = server.requests.slice(1).map(request => request.body)
+      expect(responseBodies.every(body => body?.model === 'grok-4.6' && body.stream === true)).toBe(true)
+      expect(responseBodies).toContainEqual(expect.objectContaining({ reasoning: { effort: 'medium', summary: 'auto' } }))
+      expect(responseBodies.filter(body => body?.reasoning !== undefined)).toHaveLength(1)
     } finally {
       await server.close()
     }

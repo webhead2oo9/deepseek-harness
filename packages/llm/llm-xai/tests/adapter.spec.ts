@@ -5,8 +5,10 @@ import type { ModelAuth } from '@deepseek-ai/dsh-model-auth'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { resolveXaiOptions } from '../src/index.ts'
-import { XaiAdapter } from '../src/adapter.ts'
+import { DEFAULT_XAI_REASONING_EFFORTS, XaiAdapter } from '../src/adapter.ts'
 import { XAI_OAUTH_PROVIDER } from '../src/auth.ts'
+
+const DEFAULT_REASONING_IDS = Object.keys(DEFAULT_XAI_REASONING_EFFORTS)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -62,7 +64,7 @@ describe('xAI adapter discovery', () => {
     ])
     const resolved = await adapter.resolveModel(XAI_OAUTH_PROVIDER, 'grok-4.5')
     expect(resolved.context).toEqual({ contextWindow: 500_000 })
-    expect(resolved.reasoning?.efforts.length).toBeGreaterThan(0)
+    expect(resolved.reasoning?.efforts.map(effort => effort.id)).toEqual(DEFAULT_REASONING_IDS)
     expect(request).toHaveBeenCalledOnce()
   })
 
@@ -114,9 +116,33 @@ describe('xAI adapter discovery', () => {
       expect.objectContaining({ id: 'grok-2026', name: 'grok-2026', inputModalities: ['text', 'image'] }),
       expect.objectContaining({ id: 'grok-unknown', name: 'Friendly Grok', inputModalities: ['text'] }),
     ])
-    await expect(adapter.resolveModel(XAI_OAUTH_PROVIDER, 'grok-unknown')).resolves.toMatchObject({
-      context: { contextWindow: 1234 },
+    const unknown = await adapter.resolveModel(XAI_OAUTH_PROVIDER, 'grok-unknown')
+    expect(unknown.context).toEqual({ contextWindow: 1234 })
+    expect(unknown.reasoning?.efforts.map(effort => effort.id)).toEqual(DEFAULT_REASONING_IDS)
+  })
+
+  it('offers Responses-family reasoning levels for a model newer than the static catalog', async () => {
+    const adapter = new XaiAdapter({
+      options: () => resolveXaiOptions({}), modelAuth: auth(),
+      fetch: () => Promise.resolve(responseBody({ models: [
+        { id: 'grok-4.6', aliases: ['grok-latest'], input_modalities: ['text', 'image'] },
+      ] })),
     })
+    const resolved = await adapter.resolveModel(XAI_OAUTH_PROVIDER, 'grok-4.6')
+    expect(resolved.reasoning?.efforts.map(effort => effort.id)).toEqual(DEFAULT_REASONING_IDS)
+    expect(resolved.reasoning?.efforts.some(effort => effort.id === 'off')).toBe(false)
+  })
+
+  it('inherits static metadata when a live catalog alias matches a known model', async () => {
+    const adapter = new XaiAdapter({
+      options: () => resolveXaiOptions({}), modelAuth: auth(),
+      fetch: () => Promise.resolve(responseBody({ models: [
+        { id: 'grok-4.5-0309', aliases: ['grok-4.5'], input_modalities: ['text', 'image'] },
+      ] })),
+    })
+    const aliased = await adapter.resolveModel(XAI_OAUTH_PROVIDER, 'grok-4.5-0309')
+    expect(aliased.context).toEqual({ contextWindow: 500_000 })
+    expect(aliased.reasoning?.efforts.map(effort => effort.id)).toEqual(DEFAULT_REASONING_IDS)
   })
 
   it('uses pi-ai reasoning defaults when static metadata has no explicit level map', async () => {
