@@ -6,11 +6,21 @@ export interface CodexTextContent {
   text: string
 }
 
+/** One base64 data-URL image inside Responses input. */
+export interface CodexImageContent {
+  type: 'input_image'
+  image_url: string
+  detail: 'auto'
+}
+
+/** Content accepted in a user message or function-call result. */
+export type CodexInputContent = CodexTextContent | CodexImageContent
+
 /** One Responses API input item used by the Harness adapter. */
 export type CodexInputItem =
-  | { type: 'message'; role: 'developer' | 'user' | 'assistant'; content: CodexTextContent[] }
+  | { type: 'message'; role: 'developer' | 'user' | 'assistant'; content: CodexInputContent[] }
   | { type: 'function_call'; call_id: string; name: string; arguments: string; id?: string }
-  | { type: 'function_call_output'; call_id: string; output: string }
+  | { type: 'function_call_output'; call_id: string; output: string | CodexInputContent[] }
   | Record<string, unknown>
 
 /** Function tool accepted by the Responses API. */

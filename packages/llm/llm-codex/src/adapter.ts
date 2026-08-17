@@ -2,6 +2,7 @@
 
 import {
   attributionHeaders,
+  contentHasImage,
   LlmAdapter,
   LlmError,
   ProviderRequestId,
@@ -15,6 +16,7 @@ import type {
   ResolvedRetryPolicy,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { ModelAuthError } from '@deepseek-ai/dsh-model-auth'
 import type { ModelAuth, ModelAuthorization } from '@deepseek-ai/dsh-model-auth'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -54,6 +56,8 @@ export interface CodexAdapterOptions {
   options: () => CodexConnectionOptions
   /** Provider-neutral credential lifecycle service. */
   modelAuth: ModelAuth
+  /** Resolve the optional durable attachment service at request time. */
+  resolveAttachments?: () => AttachmentStore | undefined
 }
 
 interface CatalogCache {
@@ -114,7 +118,7 @@ function modelInfo(provider: string, model: CodexCatalogModel): LlmModelInfo {
     id: model.slug,
     name: model.display_name,
     ...model.description === undefined ? {} : { description: model.description },
-    inputModalities: ['text'],
+    inputModalities: ['text', 'image'],
   }
 }
 
@@ -215,7 +219,7 @@ export class CodexAdapter extends LlmAdapter {
     }))
     return {
       ...(configured === undefined
-        ? { provider, id: model, name: model, inputModalities: ['text' as const] }
+        ? { provider, id: model, name: model, inputModalities: ['text' as const, 'image' as const] }
         : modelInfo(provider, configured)),
       context: { contextWindow: configured?.context_window ?? this.config.options().defaultContextWindow },
       ...efforts === undefined || efforts.length === 0
@@ -298,7 +302,9 @@ export class CodexAdapter extends LlmAdapter {
     connection: CodexConnectionOptions,
     onComment: () => void,
   ): AsyncGenerator<StreamChunk, void, void> {
-    const payload = JSON.stringify(serializeCodexRequest(options))
+    const containsImage = options.messages.some(message => contentHasImage(message.content))
+    const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
+    const payload = JSON.stringify(await serializeCodexRequest(options, attachments, signal))
     const response = await this.fetchAuthorized(`${connection.baseURL}/responses`, {
       method: 'POST',
       headers: {

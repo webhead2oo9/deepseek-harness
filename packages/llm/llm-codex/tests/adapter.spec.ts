@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { createUserMessage, LlmError, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ModelAuth } from '@deepseek-ai/dsh-model-auth'
 import { ModelAuthError } from '@deepseek-ai/dsh-model-auth'
 import { CodexAdapter } from '../src/adapter.ts'
@@ -78,6 +80,32 @@ describe('CodexAdapter', () => {
     })
   })
 
+  it('loads durable images into native Responses requests', async () => {
+    const attachment: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png', bytes: 3, width: 1, height: 1,
+    }
+    const readImage = vi.fn(async () => ({ ref: attachment, data: Uint8Array.of(1, 2, 3) }))
+    const fetchMock = vi.fn(() => Promise.resolve(streamResponse()))
+    vi.stubGlobal('fetch', fetchMock)
+    const instance = new CodexAdapter({
+      options,
+      modelAuth: auth() as unknown as ModelAuth,
+      resolveAttachments: () => ({ readImage }) as unknown as AttachmentStore,
+    })
+    await collect(instance.stream({
+      provider: 'openai-codex', model: 'gpt-5.6-sol',
+      messages: [createUserMessage({ source: { kind: 'user' }, content: [{ type: 'image', attachment }] })],
+    }))
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    if (typeof init.body !== 'string') throw new Error('Codex request body was not serialized JSON')
+    expect(JSON.parse(init.body)).toMatchObject({ input: [{
+      type: 'message', role: 'user',
+      content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: 'auto' }],
+    }] })
+    expect(readImage).toHaveBeenCalledWith(attachment, expect.any(AbortSignal))
+  })
+
   it('forces one serialized refresh after an unauthorized response', async () => {
     const modelAuth = auth()
     const fetchMock = vi.fn()
@@ -109,7 +137,7 @@ describe('CodexAdapter', () => {
     const adapter = new CodexAdapter({ options, modelAuth: modelAuth as unknown as ModelAuth })
     expect(await adapter.listModels('openai-codex')).toEqual([{
       provider: 'openai-codex', id: 'gpt-5-codex', name: 'GPT-5 Codex',
-      description: 'Coding model', inputModalities: ['text'],
+      description: 'Coding model', inputModalities: ['text', 'image'],
     }])
     expect(await adapter.resolveModel('openai-codex', 'gpt-5-codex')).toMatchObject({
       context: { contextWindow: 200_000 },
@@ -139,11 +167,11 @@ describe('CodexAdapter', () => {
     ]))))
     const instance = adapter()
     expect(await instance.listModels('route')).toEqual([
-      { provider: 'route', id: 'minimal', name: 'minimal', inputModalities: ['text'] },
-      { provider: 'route', id: 'full', name: 'full', inputModalities: ['text'] },
+      { provider: 'route', id: 'minimal', name: 'minimal', inputModalities: ['text', 'image'] },
+      { provider: 'route', id: 'full', name: 'full', inputModalities: ['text', 'image'] },
     ])
     expect(await instance.resolveModel('route', 'minimal')).toEqual({
-      provider: 'route', id: 'minimal', name: 'minimal', inputModalities: ['text'], context: { contextWindow: 100_000 },
+      provider: 'route', id: 'minimal', name: 'minimal', inputModalities: ['text', 'image'], context: { contextWindow: 100_000 },
     })
     expect(await instance.resolveModel('route', 'full')).toMatchObject({
       reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] },
@@ -182,7 +210,7 @@ describe('CodexAdapter', () => {
     const missing = auth()
     missing.resolve.mockRejectedValue(new ModelAuthError('sign in', 'NOT_AUTHENTICATED'))
     await expect(adapter({}, missing).resolveModel('route', 'unknown')).resolves.toEqual({
-      provider: 'route', id: 'unknown', name: 'unknown', inputModalities: ['text'], context: { contextWindow: 100_000 },
+      provider: 'route', id: 'unknown', name: 'unknown', inputModalities: ['text', 'image'], context: { contextWindow: 100_000 },
     })
     const noProvider = auth()
     noProvider.resolve.mockRejectedValue(new ModelAuthError('missing', 'NO_PROVIDER'))

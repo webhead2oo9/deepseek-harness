@@ -127,7 +127,7 @@ export async function* translateCodex(payloads: AsyncIterable<string>): AsyncGen
         }
         : reason,
       ...reason.kind === 'stop' || reason.kind === 'tool-calls'
-        ? { replayState: { version: CODEX_REPLAY_VERSION, items: replayItems } }
+        ? { replayState: { response: { kind: 'codex', version: CODEX_REPLAY_VERSION, items: replayItems } } }
         : {},
     })
     return chunks

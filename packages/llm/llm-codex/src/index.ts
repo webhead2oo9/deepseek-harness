@@ -195,5 +195,6 @@ export function apply(ctx: Context, config: Config): void {
   ctx.llm.registerAdapter([CODEX_PROVIDER], new CodexAdapter({
     options: () => resolved.connection,
     modelAuth: ctx.modelAuth,
+    resolveAttachments: () => ctx.get('attachments'),
   }))
 }

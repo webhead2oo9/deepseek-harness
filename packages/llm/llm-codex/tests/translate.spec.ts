@@ -35,7 +35,10 @@ describe('native Codex event translation', () => {
       { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'plan' } },
       { type: 'block-end', index: 1, block: { type: 'text', text: 'hello' } },
       { type: 'usage', usage: { inputTokens: 7, outputTokens: 7, cacheReadTokens: 5, reasoningTokens: 3 } },
-      { type: 'finish', reason: { kind: 'stop' }, replayState: { version: 0, items: [message] } },
+      {
+        type: 'finish', reason: { kind: 'stop' },
+        replayState: { response: { kind: 'codex', version: 0, items: [message] } },
+      },
     ])
   })
 

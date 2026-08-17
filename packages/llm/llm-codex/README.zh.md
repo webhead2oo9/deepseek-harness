@@ -19,7 +19,7 @@ Harness LLM（大语言模型）seam 的原生 OpenAI Codex 提供方。本包�
 
 `baseURL`、OAuth issuer 与客户端身份、回调端口、workspace allowlist、登录与刷新计时器、模型目录 cache 时长、回退上下文窗口、流 idle timeout 和重试策略都是显式 Cordis 插件配置字段。默认值指向 OpenAI 的公共 ChatGPT Codex 服务。`clientVersion` 默认使用适配器的 Codex 协议兼容版本，因为后端会用它筛选模型目录；仅当后端要求其他版本时才覆盖该值。除 loopback 测试服务器外，非 HTTPS 端点会被拒绝。
 
-适配器从 `/models` 获取已认证的模型目录，并且只公开标记为列出且受 Responses API 支持的模型。它向 `/responses` 发送原生流式请求，并在 401 后刷新一次，再返回认证失败。终止 Responses 事件会结算该流，不要求尾随 `[DONE]`；若传输结束或 `[DONE]` 出现在终止事件之前，则以 `STREAM_CLOSED` 失败。成功响应会把提供方原生输出项保留为回放状态，因此加密推理和工具调用身份可在后续轮次中原样返回。图像、temperature、stop sequence 和显式 `maxTokens` 会被拒绝，因为该路由没有把它们映射到 Codex 后端。
+适配器从 `/models` 获取已认证的模型目录，并且只公开标记为列出且受 Responses API 支持的模型。每个公开模型都接受文本和图像输入。适配器从附件服务读取持久图像，并在用户消息或工具结果中将其作为 base64 data URL `input_image` 项发送。它向 `/responses` 发送原生流式请求，并在 401 后刷新一次，再返回认证失败。终止 Responses 事件会结算该流，不要求尾随 `[DONE]`；若传输结束或 `[DONE]` 出现在终止事件之前，则以 `STREAM_CLOSED` 失败。成功响应会把提供方原生输出项保留为回放状态，因此加密推理和工具调用身份可在后续轮次中原样返回。temperature、stop sequence 和显式 `maxTokens` 会被拒绝，因为该路由没有把它们映射到 Codex 后端。
 
 ## 模型体验
 
@@ -27,7 +27,7 @@ Harness LLM（大语言模型）seam 的原生 OpenAI Codex 提供方。本包�
 
 #### 模型看到的内容
 
-所选模型接收 `GenerateOptions.system`、文本消息、工具 schema、工具结果、推理强度和提供方原生回放项。OAuth 值、账户状态、传输标头和登录 UI 绝不会进入模型输入。
+所选模型接收 `GenerateOptions.system`、文本与持久图像内容、工具 schema、工具结果、推理强度和提供方原生回放项。OAuth 值、账户状态、传输标头和登录 UI 绝不会进入模型输入。
 
 #### Token 影响
 
@@ -53,6 +53,6 @@ Responses SSE 事件会成为有序的推理、文本和工具调用分片。后
 
 ## 已知限制与暂缓事项
 
-- 图像输入和没有原生 Codex 映射的请求控制会在网络 I/O 前失败。
+- 没有原生 Codex 映射的请求控制会在网络 I/O 前失败。
 - 浏览器登录要求浏览器与 Host 共享 loopback 机器；远程浏览器使用设备代码。
 - Windows 无法对认证文档强制执行 POSIX mode bit；该文件仍会在用户的 Harness home 下以原子方式替换。

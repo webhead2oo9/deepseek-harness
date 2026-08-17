@@ -88,13 +88,20 @@ describe('Codex plugin configuration', () => {
   it('registers one native auth driver and one LLM route', () => {
     const register = vi.fn()
     const registerAdapter = vi.fn()
-    const ctx = { modelAuth: { register }, llm: { registerAdapter } } as unknown as Context
+    const attachments = {}
+    const get = vi.fn(() => attachments)
+    const ctx = { modelAuth: { register }, llm: { registerAdapter }, get } as unknown as Context
     apply(ctx, { issuer: 'http://localhost:3000', baseURL: 'http://127.0.0.1:4000' })
     expect(register.mock.calls[0]?.[0]).toBeInstanceOf(CodexAuthDriver)
     expect(registerAdapter.mock.calls[0]?.[0]).toEqual([CODEX_PROVIDER])
     const adapter = registerAdapter.mock.calls[0]?.[1] as CodexAdapter
     expect(adapter).toBeInstanceOf(CodexAdapter)
     expect(adapter.providerRetryPolicy(CODEX_PROVIDER)).toBeDefined()
+    const registered = adapter as unknown as {
+      config: { resolveAttachments: () => unknown }
+    }
+    expect(registered.config.resolveAttachments()).toBe(attachments)
+    expect(get).toHaveBeenCalledWith('attachments')
   })
 })
 

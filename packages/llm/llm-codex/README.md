@@ -19,7 +19,7 @@ For a custom composition, mount the auth Service Provider before this plugin:
 
 `baseURL`, OAuth issuer and client identity, callback ports, workspace allowlist, login and refresh timers, model-catalog cache duration, fallback context window, stream idle timeout, and retry policy are explicit Cordis plugin config fields. Defaults target OpenAI's public ChatGPT Codex service. `clientVersion` defaults to the adapter's Codex protocol compatibility version because the backend uses it to filter the model catalog; override it only for a backend that expects a different version. Non-HTTPS endpoints are rejected except loopback test servers.
 
-The adapter obtains the authenticated model catalog from `/models` and exposes only models marked for listing and supported by the Responses API. It sends native streaming requests to `/responses` and refreshes once after a 401 before returning an auth failure. A terminal Responses event settles the stream without requiring a trailing `[DONE]`; transport end or `[DONE]` before a terminal event fails with `STREAM_CLOSED`. Successful responses retain provider-native output items as replay state so encrypted reasoning and tool-call identity return unchanged on later turns. Images, temperature, stop sequences, and explicit `maxTokens` are rejected because this route does not map them to the Codex backend.
+The adapter obtains the authenticated model catalog from `/models` and exposes only models marked for listing and supported by the Responses API. Every exposed model accepts text and image input. The adapter reads durable images from the attachment service and sends them as base64 data-URL `input_image` items in user messages or tool results. It sends native streaming requests to `/responses` and refreshes once after a 401 before returning an auth failure. A terminal Responses event settles the stream without requiring a trailing `[DONE]`; transport end or `[DONE]` before a terminal event fails with `STREAM_CLOSED`. Successful responses retain provider-native output items as replay state so encrypted reasoning and tool-call identity return unchanged on later turns. Temperature, stop sequences, and explicit `maxTokens` are rejected because this route does not map them to the Codex backend.
 
 ## Model Experience
 
@@ -27,7 +27,7 @@ The adapter obtains the authenticated model catalog from `/models` and exposes o
 
 #### What the model sees
 
-The selected model receives `GenerateOptions.system`, text messages, tool schemas, tool results, reasoning effort, and provider-native replay items. OAuth values, account status, transport headers, and login UI never enter model input.
+The selected model receives `GenerateOptions.system`, text and durable image content, tool schemas, tool results, reasoning effort, and provider-native replay items. OAuth values, account status, transport headers, and login UI never enter model input.
 
 #### Token effect
 
@@ -53,6 +53,6 @@ Retained response items append after the prior reusable prefix. Harness does not
 
 ## Known Limitations and Deferred Work
 
-- Image input and request controls without a native Codex mapping fail before network I/O.
+- Request controls without a native Codex mapping fail before network I/O.
 - Browser login requires the browser and Host to share the loopback machine; remote browsers use device code.
 - Windows cannot enforce POSIX mode bits on the auth document; the file remains atomically replaced under the user's Harness home.
