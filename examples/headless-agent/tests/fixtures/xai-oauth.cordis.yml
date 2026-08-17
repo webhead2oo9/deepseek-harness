@@ -1,0 +1,13 @@
+- id: agent-default-model
+  config:
+    provider: xai-oauth
+    model: grok-4.5
+
+- id: llm-xai
+  config:
+    baseURL: !!js process.env.DSH_XAI_SNAPSHOT_BASE_URL
+    modelCacheTtlMs: 300000
+
+- id: system-prompt
+  config:
+    persona: 'Keyless xAI OAuth provider snapshot.'

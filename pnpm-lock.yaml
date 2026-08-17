@@ -5455,6 +5455,9 @@ importers:
       '@deepseek-ai/dsh-model-auth':
         specifier: workspace:^
         version: link:../../credentials/model-auth
+      '@deepseek-ai/dsh-model-auth-local':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth-local
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout

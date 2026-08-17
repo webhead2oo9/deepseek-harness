@@ -57,6 +57,9 @@ const deepseekDefaultsConfigPath = fileURLToPath(new URL('./fixtures/deepseek-de
 const headlessOverlayPath = fileURLToPath(new URL('./fixtures/headless-profile.cordis.yml', import.meta.url))
 const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.expected.jsonl')
 const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
+const xaiOverlayPath = fileURLToPath(new URL('./fixtures/xai-oauth.cordis.yml', import.meta.url))
+const xaiScenarioDir = join(snapshotsDir, 'xai-oauth')
+const xaiSessionExpected = join(xaiScenarioDir, 'session.expected.jsonl')
 const cliMockLlmPluginPath = fileURLToPath(new URL('./fixtures/cli-mock-llm.ts', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
@@ -72,6 +75,12 @@ interface PersistedLog {
 interface DeepSeekDefaultsServer {
   readonly url: string
   readonly requests: JsonObject[]
+  close(): Promise<void>
+}
+
+interface XaiSnapshotServer {
+  readonly url: string
+  readonly requests: Array<{ method: string; path: string; authorization: string | undefined; body: JsonObject | undefined }>
   close(): Promise<void>
 }
 
@@ -107,6 +116,72 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
   if (address === null || typeof address === 'string') throw new Error('DeepSeek defaults snapshot server has no port')
   return {
     url: `http://127.0.0.1:${address.port}`,
+    requests,
+    close: () => new Promise(resolve => server.close(() => { resolve() })),
+  }
+}
+
+/** Serve deterministic xAI discovery and one OpenAI Responses completion. */
+async function xaiSnapshotServer(): Promise<XaiSnapshotServer> {
+  const requests: XaiSnapshotServer['requests'] = []
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', (chunk: string) => { body += chunk })
+    request.on('end', () => {
+      const path = request.url ?? ''
+      requests.push({
+        method: request.method ?? '',
+        path,
+        authorization: request.headers.authorization,
+        body: body.length === 0 ? undefined : JSON.parse(body) as JsonObject,
+      })
+      if (request.method === 'GET' && path === '/v1/language-models') {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({
+          models: [{ id: 'grok-4.5', aliases: ['grok-latest'], input_modalities: ['text', 'image'] }],
+        }))
+        return
+      }
+      if (request.method === 'POST' && path === '/v1/responses') {
+        const item = {
+          id: 'xai-message-1', type: 'message', role: 'assistant', status: 'completed',
+          content: [{ type: 'output_text', text: 'XAI_SNAPSHOT_OK', annotations: [] }],
+        }
+        const completed = {
+          id: 'xai-response-1', object: 'response', created_at: 0, status: 'completed', model: 'grok-4.5',
+          output: [item],
+          usage: {
+            input_tokens: 5, output_tokens: 3, total_tokens: 8,
+            input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 },
+          },
+        }
+        const events = [
+          { type: 'response.created', response: { ...completed, status: 'in_progress', output: [] } },
+          {
+            type: 'response.output_item.added', output_index: 0,
+            item: { ...item, status: 'in_progress', content: [] },
+          },
+          {
+            type: 'response.output_text.delta', output_index: 0, item_id: item.id,
+            content_index: 0, delta: 'XAI_SNAPSHOT_OK', logprobs: [],
+          },
+          { type: 'response.output_item.done', output_index: 0, item },
+          { type: 'response.completed', response: completed },
+        ]
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.end(`${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`)
+        return
+      }
+      response.writeHead(404, { 'content-type': 'application/json' })
+      response.end('{"error":{"message":"unexpected xAI snapshot request"}}')
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('xAI snapshot server has no port')
+  return {
+    url: `http://127.0.0.1:${address.port}/v1`,
     requests,
     close: () => new Promise(resolve => server.close(() => { resolve() })),
   }
@@ -219,6 +294,65 @@ async function prepareCliMockFixture(cwd: string): Promise<void> {
 }
 
 describe('headless stream-json snapshots', () => {
+  it('runs the xAI OAuth route through the product headless profile', async () => {
+    const server = await xaiSnapshotServer()
+    try {
+      if (refreshing) await mkdir(xaiScenarioDir, { recursive: true })
+      const task = 'Answer with the deterministic xAI snapshot response.'
+      const result = await runLoaderSmoke({
+        label: 'xAI OAuth product headless snapshot',
+        tempDirPrefix: 'headless-snapshot-xai-oauth-',
+        binScript: dshBinScript,
+        configPath: xaiOverlayPath,
+        binArgs: ['--profile', 'headless', '--patch', xaiOverlayPath, task],
+        tsconfigPath,
+        env: {
+          DSH_PERMISSION_MODE: 'danger-full-access',
+          DSH_XAI_SNAPSHOT_BASE_URL: server.url,
+          DSH_TELEMETRY_DISABLED: '1',
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+        },
+        prepare: async (cwd) => {
+          const home = join(cwd, '.dsh')
+          await mkdir(home, { recursive: true })
+          await writeFile(join(home, '.model-auth.json'), `${JSON.stringify({
+            version: 0,
+            providers: {
+              'xai-oauth': {
+                type: 'oauth', access: 'xai-snapshot-access', refresh: 'xai-snapshot-refresh', expires: 4_102_444_800_000,
+              },
+            },
+          })}\n`)
+        },
+        inspect: async (cwd) => {
+          const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+          expect(logs).toHaveLength(1)
+          const actual = logs[0]
+          if (actual === undefined) throw new Error('xAI snapshot did not persist its session')
+          const context = contextFromLogs([actual.content])
+          const session = scrubRequestHeaders(normalizeSessionLog(actual.content, context))
+          if (refreshing) await writeFile(xaiSessionExpected, session)
+          expect(session).toBe(await readFile(xaiSessionExpected, 'utf8'))
+          expect(session).toContain(task)
+          expect(session).toContain('XAI_SNAPSHOT_OK')
+        },
+      })
+
+      expect(result.stdout).toBe('XAI_SNAPSHOT_OK\n')
+      expect(result.stderr).toBe('')
+      expect(server.requests.map(request => [request.method, request.path])).toEqual([
+        ['GET', '/v1/language-models'],
+        ['POST', '/v1/responses'],
+        ['POST', '/v1/responses'],
+      ])
+      expect(server.requests.every(request => request.authorization === 'Bearer xai-snapshot-access')).toBe(true)
+      expect(server.requests[1]?.body).toMatchObject({ model: 'grok-4.5', stream: true })
+      expect(server.requests[2]?.body).toMatchObject({ model: 'grok-4.5', stream: true })
+    } finally {
+      await server.close()
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs one task through the product headless profile command', async () => {
     const task = 'Prove the product headless profile path with one real tool round trip.'
     const result = await runLoaderSmoke({

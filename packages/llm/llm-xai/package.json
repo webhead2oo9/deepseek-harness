@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-llm-xai",
   "description": "xAI subscription OAuth and Grok Responses provider for DeepSeek Harness",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },
@@ -48,6 +48,7 @@
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-llm-pi-ai": "workspace:^",
     "@deepseek-ai/dsh-model-auth": "workspace:^",
+    "@deepseek-ai/dsh-model-auth-local": "workspace:^",
     "@deepseek-ai/dsh-timeout": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }

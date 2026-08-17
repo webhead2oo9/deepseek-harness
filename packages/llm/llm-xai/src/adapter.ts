@@ -101,9 +101,9 @@ function displayName(model: XaiCatalogModel): string {
 }
 
 function reasoningEfforts(model: Model<Api>): Exclude<PiAiModelProfile['reasoningEfforts'], undefined> {
-  if (!model.reasoning) return false
   return Object.fromEntries(getSupportedThinkingLevels(model).map(level => [
     level,
+    /* v8 ignore next -- pi-ai omits disabled `off` levels from this supported-level list */
     level === 'off' ? null : model.thinkingLevelMap?.[level] ?? level,
   ]))
 }
@@ -120,7 +120,7 @@ function modelProfile(
     contextWindow: metadata?.contextWindow ?? options.defaultContextWindow,
     maxTokens: metadata?.maxTokens ?? options.defaultMaxTokens,
     input: [...model.inputModalities],
-    reasoningEfforts: metadata === undefined ? false : reasoningEfforts(metadata),
+    reasoningEfforts: metadata?.reasoning === true ? reasoningEfforts(metadata) : false,
   }
 }
 
@@ -138,6 +138,7 @@ function profilesFor(models: readonly XaiCatalogModel[], options: XaiConnectionO
     },
   })
   const profile = resolved.get(XAI_OAUTH_PROVIDER)
+  /* v8 ignore next -- resolveProfiles preserves every validated provider key supplied above */
   if (profile === undefined) throw new Error('llm-xai: resolved profile is missing')
   return new Map([[XAI_OAUTH_PROVIDER, { ...profile, retryPolicy: options.retryPolicy }]])
 }
@@ -160,7 +161,7 @@ function bearer(authorization: ModelAuthorization): string {
   const value = Object.entries(authorization.headers)
     .find(([name]) => name.toLowerCase() === 'authorization')?.[1]
   const match = value?.match(/^Bearer (.+)$/)
-  if (match?.[1] === undefined || match[1].length === 0) {
+  if (match?.[1] === undefined) {
     throw new LlmError('xAI authentication produced no bearer token', 'AUTH')
   }
   return match[1]
@@ -169,7 +170,6 @@ function bearer(authorization: ModelAuthorization): string {
 /** xAI subscription adapter with an authenticated language-model catalog. */
 export class XaiAdapter extends LlmAdapter {
   private cache: CatalogCache
-  private refreshing: Promise<ReadonlyMap<string, ResolvedPiAiProviderProfile>> | undefined
   private readonly delegate: PiAiAdapter
   private readonly request: typeof fetch
 
@@ -222,9 +222,7 @@ export class XaiAdapter extends LlmAdapter {
 
   private catalog(signal?: AbortSignal): Promise<ReadonlyMap<string, ResolvedPiAiProviderProfile>> {
     if (Date.now() < this.cache.expiresAt) return Promise.resolve(this.cache.profiles)
-    if (this.refreshing !== undefined) return this.refreshing
-    this.refreshing = this.fetchCatalog(signal).finally(() => { this.refreshing = undefined })
-    return this.refreshing
+    return this.fetchCatalog(signal)
   }
 
   private async fetchCatalog(signal?: AbortSignal): Promise<ReadonlyMap<string, ResolvedPiAiProviderProfile>> {

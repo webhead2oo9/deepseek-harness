@@ -76,6 +76,7 @@ function deviceChallenge(event: AuthEvent): ModelAuthLoginOperation['challenge']
 
 function upstreamOAuth(): OAuthAuth {
   const oauth = xaiProvider().auth.oauth
+  /* v8 ignore next -- the pinned xAI provider exports OAuth; the generic provider type keeps it optional */
   if (oauth === undefined) throw new Error('llm-xai: pi-ai xAI provider has no OAuth implementation')
   return oauth
 }

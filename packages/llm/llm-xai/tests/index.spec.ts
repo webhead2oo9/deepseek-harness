@@ -1,8 +1,14 @@
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
+import LocalModelAuth from '@deepseek-ai/dsh-model-auth-local'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { apply, resolveXaiOptions, XAI_API_BASE_URL } from '../src/index.ts'
 import type { Config } from '../src/index.ts'
+import * as XaiPlugin from '../src/index.ts'
 import { XaiAdapter } from '../src/adapter.ts'
 import { XAI_OAUTH_PROVIDER, XaiAuthDriver } from '../src/auth.ts'
 import * as XaiInvariant from '../src/invariant.ts'
@@ -34,6 +40,26 @@ describe('xAI plugin configuration', () => {
     expect(register.mock.calls[0]?.[0]).toBeInstanceOf(XaiAuthDriver)
     expect(registerAdapter.mock.calls[0]?.[0]).toEqual([XAI_OAUTH_PROVIDER])
     expect(registerAdapter.mock.calls[0]?.[1]).toBeInstanceOf(XaiAdapter)
+  })
+
+  it('removes its auth driver and LLM route when the plugin fiber disposes', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-xai-hmr-'))
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(LocalModelAuth, { path: join(dir, '.model-auth.json') })
+      const fiber = ctx.plugin(XaiPlugin, { baseURL: 'http://127.0.0.1:3000' })
+      await fiber
+      expect(ctx.modelAuth.hasProvider(XAI_OAUTH_PROVIDER)).toBe(true)
+      expect(ctx.llm.listProviders()).toContainEqual({ id: XAI_OAUTH_PROVIDER, name: 'xAI (Grok)' })
+
+      await fiber.dispose()
+      expect(ctx.modelAuth.hasProvider(XAI_OAUTH_PROVIDER)).toBe(false)
+      expect(ctx.llm.listProviders()).not.toContainEqual({ id: XAI_OAUTH_PROVIDER, name: 'xAI (Grok)' })
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

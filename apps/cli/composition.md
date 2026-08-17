@@ -168,6 +168,8 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_deepseek
   plugin_dsh_base_llm_codex["llm-codex<br/>@deepseek-ai/dsh-llm-codex"]
   cfg --> plugin_dsh_base_llm_codex
+  plugin_dsh_base_llm_xai["llm-xai<br/>@deepseek-ai/dsh-llm-xai"]
+  cfg --> plugin_dsh_base_llm_xai
 ```
 
 | Plugin id | Package / module |
@@ -252,6 +254,7 @@ flowchart LR
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek` |
 | `llm-codex` | `@deepseek-ai/dsh-llm-codex` |
+| `llm-xai` | `@deepseek-ai/dsh-llm-xai` |
 
 Source config: [`packages/bundle/base/cordis.patch.yml`](../../packages/bundle/base/cordis.patch.yml).
 
