@@ -461,3 +461,8 @@
     # requests fail with MISSING_CREDENTIAL until authentication completes.
     - id: llm-codex
       name: '@deepseek-ai/dsh-llm-codex'
+
+    # xAI subscription OAuth and the Grok Responses protocol. The route stays
+    # visible while signed out so the Models surface can initiate device login.
+    - id: llm-xai
+      name: '@deepseek-ai/dsh-llm-xai'

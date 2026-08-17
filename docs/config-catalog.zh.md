@@ -1210,6 +1210,34 @@ export type Config = Readonly<Record<string, never>>
 
 来源：[`packages/llm/llm-retry/src/index.ts:24`](../packages/llm/llm-retry/src/index.ts)
 
+<a id="deepseek-aidsh-llm-xai"></a>
+
+## `@deepseek-ai/dsh-llm-xai`
+
+需要：`llm` · `modelAuth`
+
+```ts config-catalog
+/** xAI OAuth provider configuration. */
+export interface Config {
+  /** xAI API root. Production credentials may only be sent to x.ai hosts. */
+  baseURL?: string
+  /** Context capacity for discovered models without static metadata. */
+  defaultContextWindow?: number
+  /** Output capacity for discovered models without static metadata. */
+  defaultMaxTokens?: number
+  /** Maximum silence between streaming response events in milliseconds. */
+  streamIdleTimeoutMs?: number
+  /** Lifetime of a successful model-discovery result in milliseconds. */
+  modelCacheTtlMs?: number
+  /** Retry policy for retryable xAI model requests. */
+  retryPolicy?: RetryPolicyConfig
+}
+```
+
+依赖：[`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+来源：[`packages/llm/llm-xai/src/index.ts:35`](../packages/llm/llm-xai/src/index.ts)
+
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
 ## `@deepseek-ai/dsh-lsp-stdio`

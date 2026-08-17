@@ -65,7 +65,9 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.getByText('填入各提供方的 API 密钥即可使用其模型。').waitFor({ timeout: 10_000 })
     await dialog.getByRole('heading', { name: '账户认证', exact: true }).waitFor({ timeout: 10_000 })
     await dialog.getByText('OpenAI Codex', { exact: true }).waitFor({ timeout: 10_000 })
-    await dialog.getByRole('img', { name: '未登录', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByText('xAI (Grok)', { exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('listitem').filter({ hasText: 'xAI (Grok)' })
+      .getByRole('img', { name: '未登录', exact: true }).waitFor({ timeout: 10_000 })
     const authSnapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(AUTH_EXPECTED, authSnapshot, MODE)
     // The dormant pi-ai adapter contributes its whole installed catalog; no

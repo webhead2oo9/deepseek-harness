@@ -26,6 +26,10 @@
       - img "未登录"
       - button "登录"
       - button "使用设备代码"
+    - listitem:
+      - text: xAI (Grok)
+      - img "未登录"
+      - button "使用设备代码"
   - status: 已保存 minimax-cn。
   - list:
     - listitem:
