@@ -16,7 +16,7 @@ Web 聊天的统计行把上下文占用率作为一个行内数字（`Context N
 
 `dsh-token-meter` 把计价启发式抽取到 `src/estimate.ts`、把位置表层折叠抽取到 `src/surface-fold.ts`（两者都与测量服务逐字共享），并注册第三个会话投影 `contextBreakdown`，携带 `systemTokens` / `toolsTokens` / `messageTokens`。envelope 数字在每条 `request/header` 上经 `canonicalHeader` 按后者胜重新计价；消息数字在逐节点 `{seq, tokens}` 列表上重放 `foldSurfaceTokens`，因此它在每个事件边界上按构造等于 `measure().surfaceTokens`，压缩（compaction）会像缩小下一个请求那样缩小它。这份共享折叠是全函数且总是新建数组——返回下一个表层而不是原地改写——从而保留了服务侧「先校验再提交」的重放事务：抛出时重放游标不前进，同一条畸形事件在重试时报同样的错。折叠表层中不存在的替换范围会直接抛出：已提交日志在追加时就经过表层校验，无法解析的范围是日志损坏，而不是可跳过的事件。
 
-`ui-conversation` 把上下文占用率从统计行移走（一个事实一个家），放到 composer 尾部的 `ContextMeter`：模型座位之后的一枚 14px 占用圆环，由 `contextPressure` 供数，点击弹出的面板把提供方精确的百分比与 `~已用 / 容量` 标题与 4px 分色分段进度条及带 `~` 前缀的组成明细行并列。两套口径刻意永不对账——启发式数字只决定进度条各彩色分段之间的相对比例，并原样显示在明细行中；每个数字都标有 `~`，因为固定的「4 字符≈1 token」启发式会系统性低估 CJK 文本与代码。（本记录落地时，圆环、标题与进度条总长取的是提供方精确值；它们现在改读锚定在提供方读数上的 `projectedTokens`，因为裸样本看不见压缩——见[仪表对压缩的失明](../bug-fix/2026-08-05-context-meter-blind-to-compaction.md)。）标题是一整句本地化文案（`context.aria`，与圆环的无障碍名共用），在 `{percent}` 槽位处切开渲染，于是读数的位置由各语言自己决定——英文在前、中文在后——同时读数保留自身独立的强调样式；宽度算出为零的分段直接不渲染，否则 `.segment` 的 min-width 会在 0% 占用时画出一段填充色。
+`ui-conversation` 把上下文占用率从统计行移走（一个事实一个家），放到 composer 尾部的 `ContextMeter`：模型座位之后的一枚 14px 占用圆环读取 `contextPressure` 中锚定在提供方读数上的 `projectedTokens`，因此压缩会立即改变读数（见[仪表对压缩的失明](../bug-fix/2026-08-05-context-meter-blind-to-compaction.md)）。点击圆环会打开一个受视口宽度约束的面板；其中的本地化标题、`~已用 / 容量`、预计剩余容量与 4px 占用进度条都使用同一读数。分母来自当前模型解析出的 `request/context` 容量；UI 不带固定的适配器兜底值。进度条先把外层填充严格限制为占用百分比，再由系统、工具与消息三类启发式份额只切分该填充，因此分段间隙与最小宽度都不能越过报告的占用量。启发式明细行保留未经缩放的数值与 `~` 前缀，因为固定的「4 字符≈1 token」估算会系统性低估 CJK 文本与代码。触发器通过 `aria-controls` 与面板关联；Escape 关闭面板且不会从仪表外部抢走焦点；占用率为 0 时不渲染填充。
 
 ## 备选方案
 
@@ -28,4 +28,4 @@ Web 聊天的统计行把上下文占用率作为一个行内数字（`Context N
 
 ## 后果
 
-token-meter 现在注册三个投影键；卸载会移除全部三个，`contextBreakdown` 可从 JSON 检查点恢复（`stateVersion` 为 1）。统计行删除了 Context 分组，圆环成为唯一的上下文 UI。面板的启发式明细行与提供方精确的标题数字肉眼可见地不一致——已接受并以 `~` 前缀标示；提升估算精度（例如按 CJK 加权）只需改动 `estimate.ts`，不涉及任何 seam。图例的紫色分段色值是字面量，因为设计平台没有紫色静态 token。
+token-meter 注册三个投影键；卸载会移除全部三个，`contextBreakdown` 可从 JSON 检查点恢复（`stateVersion` 为 1）。圆环是唯一的上下文 UI。面板的启发式明细行可能与锚定在提供方读数上的占用标题及剩余容量估算不一致；每个近似 token 读数都会明确标为估算值。提升估算精度（例如按 CJK 加权）仍只需改动 `estimate.ts`，不改变公共 API。图例的紫色分段色值是字面量，因为设计平台没有紫色静态 token。
