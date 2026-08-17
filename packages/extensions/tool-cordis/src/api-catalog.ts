@@ -913,6 +913,89 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'modelAuth',
+    summary: 'Provider-neutral model authentication service.',
+    description: 'Provider-neutral model authentication service.',
+    methods: [
+      {
+        signature: 'abstract register(driver: ModelAuthDriver): () => void',
+        description: 'Register one provider driver for the contributing plugin\'s lifetime.',
+        parameters: [{ name: 'driver', description: 'provider protocol implementation.' }],
+        returns: 'effect disposer that unregisters the driver after its work settles.',
+      },
+      {
+        signature: 'abstract hasProvider(provider: ModelAuthProviderId): boolean',
+        description: 'Whether a driver is currently registered under this id.',
+        parameters: [{ name: 'provider', description: 'provider registry id.' }],
+        returns: 'whether that driver is live.',
+      },
+      {
+        signature: 'abstract list(): Promise<ModelAuthProviderStatus[]>',
+        description: 'List registered providers without exposing credential values.',
+        parameters: [],
+        returns: 'safe status and any live login challenge in registration order.',
+      },
+      {
+        signature: 'abstract status(provider: ModelAuthProviderId): Promise<ModelAuthProviderStatus>',
+        description: 'Read safe status for one registered provider.',
+        parameters: [{ name: 'provider', description: 'provider registry id.' }],
+        returns: 'current browser-safe lifecycle, live challenge, and account facts.',
+      },
+      {
+        signature: 'abstract beginLogin( provider: ModelAuthProviderId, method: ModelAuthLoginMethod, ): Promise<ModelAuthLoginChallenge>',
+        description: 'Start a login after provider resources are ready.',
+        parameters: [{ name: 'provider', description: 'provider registry id.' }, { name: 'method', description: 'registered browser or device mechanism.' }],
+        returns: 'the safe user action needed to continue.',
+      },
+      {
+        signature: 'abstract cancelLogin(attemptId: ModelAuthLoginAttemptId): Promise<void>',
+        description: 'Cancel one live login and wait for its provider resources to close.',
+        parameters: [{ name: 'attemptId', description: 'live attempt returned by {@link beginLogin}.' }],
+      },
+      {
+        signature: 'abstract resolve(provider: ModelAuthProviderId, signal?: AbortSignal): Promise<ModelAuthorization>',
+        description: 'Resolve current request authorization, refreshing inside the provider operation when required.',
+        parameters: [{ name: 'provider', description: 'provider registry id.' }, { name: 'signal', description: 'caller cancellation for refresh I/O.' }],
+        returns: 'Host-only request authorization headers.',
+      },
+      {
+        signature: 'abstract refresh(provider: ModelAuthProviderId, signal?: AbortSignal): Promise<ModelAuthorization>',
+        description: 'Force a refresh and return the resulting request authorization.',
+        parameters: [{ name: 'provider', description: 'provider registry id.' }, { name: 'signal', description: 'caller cancellation for refresh I/O.' }],
+        returns: 'Host-only request authorization headers.',
+      },
+      {
+        signature: 'abstract logout(provider: ModelAuthProviderId, signal?: AbortSignal): Promise<void>',
+        description: 'Complete provider logout and remove the local durable record.',
+        parameters: [{ name: 'provider', description: 'provider registry id.' }, { name: 'signal', description: 'caller cancellation for provider logout I/O.' }],
+      },
+      {
+        signature: '@Remote(\'list\') remoteList(): Promise<ModelAuthProviderStatus[]>',
+        description: 'List browser-safe authentication state through the generated Remote API.',
+        parameters: [],
+        returns: 'safe status for every registered provider.',
+      },
+      {
+        signature: '@Remote(\'beginLogin\') remoteBeginLogin(provider: string, method: ModelAuthLoginMethod): Promise<ModelAuthLoginChallenge>',
+        description: 'Begin an interactive provider login through the generated Remote API.',
+        parameters: [{ name: 'provider', description: 'untrusted wire provider id.' }, { name: 'method', description: 'requested browser or device mechanism.' }],
+        returns: 'the safe user action needed to continue.',
+      },
+      {
+        signature: '@Remote(\'cancelLogin\') remoteCancelLogin(attemptId: string): Promise<void>',
+        description: 'Cancel a live login through the generated Remote API.',
+        parameters: [{ name: 'attemptId', description: 'untrusted wire login-attempt id.' }],
+        returns: 'after provider resources close.',
+      },
+      {
+        signature: '@Remote(\'logout\') remoteLogout(provider: string, signal: AbortSignal): Promise<void>',
+        description: 'Remove one provider\'s stored authentication through the generated Remote API.',
+        parameters: [{ name: 'provider', description: 'untrusted wire provider id.' }, { name: 'signal', description: 'request cancellation propagated into provider logout.' }],
+        returns: 'after provider logout and local deletion commit.',
+      },
+    ],
+  },
+  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s permission presets and their write path.',
     description: 'Owns the deployment\'s permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -2404,6 +2487,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'model-auth/updated',
+    mode: 'emit',
+    signature: '\'model-auth/updated\'(provider: ModelAuthProviderId): void',
+    summary: 'A provider registration, login lifecycle, stored account, or logout changed.',
+    description: 'A provider registration, login lifecycle, stored account, or logout changed. The payload contains only the provider id; consumers re-read status and no credential value crosses the event.',
+    parameters: [{ name: 'provider', description: 'provider whose safe status changed.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -3458,6 +3549,62 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MessageSourceMap',
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
+  },
+  {
+    name: 'ModelAuthAccount',
+    declaration: 'export interface ModelAuthAccount {\n    accountId?: string;\n    email?: string;\n    plan?: string;\n}',
+  },
+  {
+    name: 'ModelAuthBrowserChallenge',
+    declaration: 'export interface ModelAuthBrowserChallenge {\n    kind: \'browser\';\n    provider: ModelAuthProviderId;\n    attemptId: ModelAuthLoginAttemptId;\n    authorizationUrl: string;\n}',
+  },
+  {
+    name: 'ModelAuthDeviceChallenge',
+    declaration: 'export interface ModelAuthDeviceChallenge {\n    kind: \'device\';\n    provider: ModelAuthProviderId;\n    attemptId: ModelAuthLoginAttemptId;\n    verificationUrl: string;\n    userCode: string;\n    expiresAt: string;\n}',
+  },
+  {
+    name: 'ModelAuthDriver',
+    declaration: 'export interface ModelAuthDriver {\n    id: ModelAuthProviderId;\n    displayName: string;\n    methods: readonly ModelAuthLoginMethod[];\n    startLogin(method: ModelAuthLoginMethod, signal: AbortSignal): Promise<ModelAuthLoginOperation>;\n    inspect(record: unknown): ModelAuthAccount;\n    resolve(record: unknown, options: ModelAuthResolveOptions): Promise<ModelAuthResolution>;\n    logout?(record: unknown, signal?: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'ModelAuthDriverChallenge',
+    declaration: 'export type ModelAuthDriverChallenge = {\n    kind: \'browser\';\n    authorizationUrl: string;\n} | {\n    kind: \'device\';\n    verificationUrl: string;\n    userCode: string;\n    expiresAt: string;\n};',
+  },
+  {
+    name: 'ModelAuthLoginAttemptId',
+    declaration: 'export type ModelAuthLoginAttemptId = Branded<\'ModelAuthLoginAttemptId\'>;',
+  },
+  {
+    name: 'ModelAuthLoginChallenge',
+    declaration: 'export type ModelAuthLoginChallenge = ModelAuthBrowserChallenge | ModelAuthDeviceChallenge;',
+  },
+  {
+    name: 'ModelAuthLoginMethod',
+    declaration: 'export type ModelAuthLoginMethod = \'browser\' | \'device\';',
+  },
+  {
+    name: 'ModelAuthLoginOperation',
+    declaration: 'export interface ModelAuthLoginOperation {\n    challenge: ModelAuthDriverChallenge;\n    completion: Promise<unknown>;\n    cancel(reason?: string): Promise<void>;\n}',
+  },
+  {
+    name: 'ModelAuthorization',
+    declaration: 'export interface ModelAuthorization {\n    headers: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'ModelAuthProviderId',
+    declaration: 'export type ModelAuthProviderId = Branded<\'ModelAuthProviderId\'>;',
+  },
+  {
+    name: 'ModelAuthProviderStatus',
+    declaration: 'export interface ModelAuthProviderStatus {\n    provider: ModelAuthProviderId;\n    displayName: string;\n    methods: readonly ModelAuthLoginMethod[];\n    state: \'signed-out\' | \'signing-in\' | \'signed-in\' | \'error\';\n    challenge?: ModelAuthLoginChallenge;\n    account?: ModelAuthAccount;\n    error?: string;\n}',
+  },
+  {
+    name: 'ModelAuthResolution',
+    declaration: 'export interface ModelAuthResolution {\n    authorization: ModelAuthorization;\n    record?: unknown;\n}',
+  },
+  {
+    name: 'ModelAuthResolveOptions',
+    declaration: 'export interface ModelAuthResolveOptions {\n    forceRefresh: boolean;\n    signal?: AbortSignal;\n}',
   },
   {
     name: 'ModelMessageSource',

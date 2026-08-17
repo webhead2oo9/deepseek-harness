@@ -17,6 +17,7 @@ flowchart LR
   pkg_llm["llm"]
   svc_llm["ctx.llm<br/>LLM adapter registry"]
   pkg_llm_deepseek["llm-deepseek"]
+  pkg_llm_codex["llm-codex"]
   pkg_llm_replay["llm-replay"]
   pkg_agent_loop["agent-loop"]
   pkg_compaction_basic["compaction-basic"]
@@ -53,6 +54,9 @@ flowchart LR
   pkg_credentials["credentials"]
   svc_credentials["ctx.credentials<br/>Credential seam"]
   pkg_credentials_local["credentials-local"]
+  pkg_model_auth["model-auth"]
+  svc_modelAuth["ctx.modelAuth<br/>Model-provider authentication seam"]
+  pkg_model_auth_local["model-auth-local"]
   pkg_session_telemetry["session-telemetry"]
   svc_sessionTelemetry["ctx.sessionTelemetry<br/>Session telemetry seam"]
   pkg_session_telemetry_otel["session-telemetry-otel"]
@@ -230,12 +234,15 @@ flowchart LR
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
   pkg_llm --> svc_llm
+  pkg_llm_codex --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
   pkg_llm_replay --> svc_llm
   pkg_lsp --> svc_lsp
   pkg_lsp_local --> svc_lsp
   pkg_message_feedback --> svc_messageFeedback
+  pkg_model_auth --> svc_modelAuth
+  pkg_model_auth_local --> svc_modelAuth
   pkg_modules --> svc_clientModules
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -330,6 +337,8 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_modelAuth --> pkg_apiproxy
+  svc_modelAuth --> pkg_llm_codex
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -414,7 +423,7 @@ flowchart LR
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | 宿主会在会话事件之前提交已接受的图片；提供方适配器将已授权的持久引用解析为提供方原生内容。 |
-| `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | 适配器注册提供方实现；agent loop（智能体循环）与压缩功能调用提供方无关的流服务。 |
+| `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-codex`](../packages/llm/llm-codex), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | 适配器注册提供方实现；agent loop（智能体循环）与压缩功能调用提供方无关的流服务。 |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | 拥有按会话隔离的回放折叠区；压力消费方共享不可变且带修订版本的测量结果。 |
 | `ctx.toolResultPruner` | `core` | [`compaction-tool-result-pruner`](../packages/compaction/compaction-tool-result-pruner) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | 在摘要压缩前，通过可回放的单节点表层替换来改写过大的当前工具结果。 |
 | `ctx.sessions` | `core` | [`session`](../packages/core/session) | - | [`agent-loop`](../packages/core/agent-loop), [`agent`](../packages/core/agent), [`session-persistence`](../packages/session/session-persistence), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), `subagent-inprocess`, [`invariants`](../packages/runtime-diagnostics/invariants), [`message-feedback`](../packages/feedback/message-feedback) | - | 拥有仅追加的 Session 实例，并发出持久的会话事件流。 |
@@ -424,6 +433,7 @@ flowchart LR
 | `ctx.sessionPersistence` | `seam` | [`session-persistence`](../packages/session/session-persistence) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-persistence-sqlite`](../packages/session/session-persistence-sqlite) | [`agent-loop`](../packages/core/agent-loop), [`tool-bash`](../packages/shell/tool-bash), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`message-feedback`](../packages/feedback/message-feedback) | - | 各后端持久化同一套 SessionEvent 词汇；应用在组合时选择后端。 |
 | `ctx.settings` | `seam` | [`settings`](../packages/settings/settings) | [`settings-file`](../packages/settings/settings-file) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | 插件注册命名空间 schema 并解析分层值；提供方存储原始文档。LLM（大语言模型）适配器在用户分区下将其入口配置注册为组合基础；Web 网关提供经过脱敏的分层描述符，并写入用户层。 |
 | `ctx.credentials` | `seam` | [`credentials`](../packages/credentials/credentials) | [`credentials-local`](../packages/credentials/credentials-local) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | 配置携带对机密信息的引用；提供方拥有实际值。消费方按操作解析，因此轮换后的凭据会在紧接着的下一次请求中生效；Web 网关提供不含实际值的视图和只写存储。 |
+| `ctx.modelAuth` | `seam` | [`model-auth`](../packages/credentials/model-auth) | [`model-auth-local`](../packages/credentials/model-auth-local) | [`llm-codex`](../packages/llm/llm-codex), `apiproxy` | - | 提供方插件拥有登录与刷新协议；本地实现拥有不透明持久记录与登录生命周期。Host 适配器按请求解析授权，生成的 Remote 只暴露安全状态与登录 challenge。 |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | 该 seam 捕获会话记录、进行脱敏并交给一个后端；没有其他组件消费该服务，其输出会离开当前进程。 |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | 各后端以不同名称并列注册；数据形态（领域优先）挂载到枢纽上，并将类型化操作转换为不透明的 KV 单元原语。 |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | 等待所有已配置后端就绪，然后将领域形态发布为一个受生命周期约束的服务，用于类型化持久状态。 |

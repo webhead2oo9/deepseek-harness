@@ -836,6 +836,52 @@ export interface Config {
 
 Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-llm-codex"></a>
+
+## `@deepseek-ai/dsh-llm-codex`
+
+Requires: `llm` · `modelAuth`
+
+```ts config-catalog
+/** Plugin configuration for the native Codex provider. */
+export interface Config {
+  /** OpenAI OAuth issuer URL. */
+  issuer?: string
+  /** Public OAuth client id for the Codex application. */
+  clientId?: string
+  /** Client identifier sent with Codex backend requests. */
+  originator?: string
+  /** Loopback ports tried in order for browser login callbacks. */
+  callbackPorts?: number[]
+  /** Maximum browser-login lifetime in milliseconds. */
+  loginTimeoutMs?: number
+  /** Maximum device-login lifetime in milliseconds. */
+  deviceTimeoutMs?: number
+  /** Time before access-token expiry when proactive refresh begins. */
+  refreshWindowMs?: number
+  /** Refresh interval for access tokens without an expiry claim. */
+  refreshIntervalMs?: number
+  /** ChatGPT workspace ids accepted after login; empty accepts any workspace. */
+  allowedWorkspaceIds?: string[]
+  /** ChatGPT Codex Responses backend URL. */
+  baseURL?: string
+  /** Codex protocol compatibility version sent for model-catalog filtering. */
+  clientVersion?: string
+  /** Context-window fallback for models that omit it from discovery. */
+  defaultContextWindow?: number
+  /** Maximum silence between streaming response events in milliseconds. */
+  streamIdleTimeoutMs?: number
+  /** Lifetime of a successful model-discovery result in milliseconds. */
+  modelCacheTtlMs?: number
+  /** Retry policy for retryable Codex backend requests. */
+  retryPolicy?: RetryPolicyConfig
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-codex/src/index.ts:49`](../packages/llm/llm-codex/src/index.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`
@@ -1292,6 +1338,22 @@ export interface Config {
 ```
 
 Source: [`packages/feedback/message-feedback/src/index.ts:49`](../packages/feedback/message-feedback/src/index.ts)
+
+<a id="deepseek-aidsh-model-auth-local"></a>
+
+## `@deepseek-ai/dsh-model-auth-local`
+
+```ts config-catalog
+/** Plugin configuration for the local model-auth provider. */
+export interface Config {
+  /** Auth document path; defaults to `.model-auth.json` under the Harness home. */
+  path?: string
+  /** Harness home used when `path` is omitted. */
+  dshHome?: string
+}
+```
+
+Source: [`packages/credentials/model-auth-local/src/index.ts:41`](../packages/credentials/model-auth-local/src/index.ts)
 
 <a id="deepseek-aidsh-permission-presets"></a>
 
@@ -3102,6 +3164,7 @@ Abstract service classes — a deployment loads a concrete implementation packag
 - `@deepseek-ai/dsh-fs` — abstract `FileSystem` ([`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker` — abstract `DirectoryPicker` ([`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts))
 - `@deepseek-ai/dsh-jobs` — abstract `JobRegistry` ([`packages/jobs/jobs/src/index.ts`](../packages/jobs/jobs/src/index.ts))
+- `@deepseek-ai/dsh-model-auth` — abstract `ModelAuth` ([`packages/credentials/model-auth/src/index.ts`](../packages/credentials/model-auth/src/index.ts))
 - `@deepseek-ai/dsh-sandbox` — abstract `SandboxProvider` ([`packages/sandbox/sandbox/src/index.ts`](../packages/sandbox/sandbox/src/index.ts))
 - `@deepseek-ai/dsh-session-persistence` — abstract `SessionPersistence` ([`packages/session/session-persistence/src/index.ts`](../packages/session/session-persistence/src/index.ts))
 - `@deepseek-ai/dsh-session-query` — abstract `SessionQueryEngine` ([`packages/session-query/session-query/src/index.ts`](../packages/session-query/session-query/src/index.ts))

@@ -110,6 +110,11 @@
         "zod"
       ]
     },
+    "packages/credentials/model-auth": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/host/directory-picker-native": {
       "entry": [
         "tests/**/*.spec.{ts,tsx}",

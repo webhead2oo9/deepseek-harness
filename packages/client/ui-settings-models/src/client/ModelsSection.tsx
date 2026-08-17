@@ -21,6 +21,8 @@ import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsState, ModelsSettingsStore, ProviderRow } from './store.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
+import { ModelAuthCards } from './ModelAuthCards.tsx'
+import type { ModelAuthCardsInjected } from './ModelAuthCards.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -30,6 +32,8 @@ export interface ModelsSectionInjected {
   controller: ModelsSettingsStore
   /** uSES subscription hook bound to the store. */
   useSnapshot: SnapshotSelectorHook<ModelsSettingsState>
+  /** Provider-neutral account-authentication surface. */
+  auth?: ModelAuthCardsInjected
   /** Wire faces the editor writes through. */
   api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
   /** Section copy. */
@@ -169,9 +173,9 @@ export function providerCopy(template: string, target: ProviderIdentity): string
  * @returns the section, or null while the shell has not injected yet.
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, t } = props
+  const { controller, useSnapshot, api, auth, t } = props
   if (controller === undefined || useSnapshot === undefined || api === undefined || t === undefined) return null
-  return <Loaded injected={{ controller, useSnapshot, api, t }} />
+  return <Loaded injected={{ controller, useSnapshot, api, ...auth === undefined ? {} : { auth }, t }} />
 }
 
 function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
@@ -275,6 +279,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
     <div className={styles['section']}>
       <h2 className={styles['title']}>{t('title')}</h2>
       <p className={styles['intro']}>{t('intro')}</p>
+      {injected.auth === undefined ? null : <ModelAuthCards {...injected.auth} />}
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
       {savedIdentity === undefined
         ? null

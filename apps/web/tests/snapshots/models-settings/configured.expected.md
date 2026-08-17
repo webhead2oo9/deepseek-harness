@@ -19,6 +19,13 @@
     - text: 关闭
   - heading "模型" [level=2]
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
+  - heading "账户认证" [level=3]
+  - list:
+    - listitem:
+      - text: OpenAI Codex
+      - img "未登录"
+      - button "登录"
+      - button "使用设备代码"
   - status: 已保存 minimax-cn。
   - list:
     - listitem:

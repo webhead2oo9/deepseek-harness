@@ -18,6 +18,9 @@
       "path": "../../credentials/credentials"
     },
     {
+      "path": "../../credentials/model-auth"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {

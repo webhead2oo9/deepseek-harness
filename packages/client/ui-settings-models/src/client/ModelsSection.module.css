@@ -31,6 +31,40 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.authSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.authTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.authAccount,
+.authChallenge p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.authChallenge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.authChallenge a {
+  color: var(--dsw-alias-state-success-primary);
+}
+
 .notice {
   margin: 0;
   font-size: 12px;

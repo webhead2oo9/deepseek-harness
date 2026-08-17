@@ -40,6 +40,8 @@ flowchart LR
   cfg --> plugin_dsh_base_settings
   plugin_dsh_base_credentials["credentials<br/>@deepseek-ai/dsh-credentials-local"]
   cfg --> plugin_dsh_base_credentials
+  plugin_dsh_base_model_auth["model-auth<br/>@deepseek-ai/dsh-model-auth-local"]
+  cfg --> plugin_dsh_base_model_auth
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
@@ -164,6 +166,8 @@ flowchart LR
   cfg --> plugin_dsh_base_fs_sandbox
   plugin_dsh_base_llm_deepseek["llm-deepseek<br/>@deepseek-ai/dsh-llm-deepseek"]
   cfg --> plugin_dsh_base_llm_deepseek
+  plugin_dsh_base_llm_codex["llm-codex<br/>@deepseek-ai/dsh-llm-codex"]
+  cfg --> plugin_dsh_base_llm_codex
 ```
 
 | Plugin id | Package / module |
@@ -184,6 +188,7 @@ flowchart LR
 | `llm-retry` | `@deepseek-ai/dsh-llm-retry` |
 | `settings` | `@deepseek-ai/dsh-settings-file` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
+| `model-auth` | `@deepseek-ai/dsh-model-auth-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
@@ -246,6 +251,7 @@ flowchart LR
 | `agent-loop` | `@deepseek-ai/dsh-agent-loop` |
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek` |
+| `llm-codex` | `@deepseek-ai/dsh-llm-codex` |
 
 Source config: [`packages/bundle/base/cordis.patch.yml`](../../packages/bundle/base/cordis.patch.yml).
 

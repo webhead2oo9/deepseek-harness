@@ -22,6 +22,12 @@ async function bench(isLoopback = true) {
   // The plugins inject `remote`; forwarded events reach them through the
   // same `$dispatch` handoff the connection sink makes.
   new TestRemote(ctx)
+  ctx.provide('remote.modelAuth', {
+    list: () => Promise.resolve({ ok: true, value: [] }),
+    beginLogin: () => Promise.resolve({ ok: false, error: { code: 'unused', message: 'unused' } }),
+    cancelLogin: () => Promise.resolve({ ok: true, value: undefined }),
+    logout: () => Promise.resolve({ ok: true, value: undefined }),
+  } as never)
   // The apply path only captures the wire face; no call leaves this fake
   // until a section actually loads.
   ctx.provide('connection', { api: {}, isLoopback } as never)
@@ -43,7 +49,7 @@ function declare(slots: SlotRegistry): () => void {
 
 describe('ui-settings-models apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.modelAuth'])
   })
 
   it('registers the models nav entry for declarations before or after apply', async () => {

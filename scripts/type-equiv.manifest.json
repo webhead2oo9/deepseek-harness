@@ -1801,6 +1801,11 @@
       "source": "packages/credentials/credentials/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/credentials.md",
+      "symbol": "ModelAuthProviderId",
+      "source": "packages/credentials/model-auth/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/permission-presets.md",
       "symbol": "PresetSpec",
       "source": "packages/interaction/permission-presets/src/index.ts"

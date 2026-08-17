@@ -49,6 +49,7 @@ Here are some core packages that contribute to the Cordis tree.
 | [`core/agent-loop`](subsystems/core.md) | The default driver implementing that interface | `ctx.agentLoop` |
 | [`core/scope`](subsystems/scope.md) | The per-agent scoped-registration primitive | library, no key |
 | [`llm/llm`](subsystems/llm-streaming.md) | Message and stream vocabulary plus the adapter seam | `ctx.llm` |
+| [`credentials/model-auth`](../packages/credentials/model-auth/README.md) | Refreshable model-provider login, safe status, and Host-only authorization | `ctx.modelAuth` |
 
 ## Events
 
@@ -108,6 +109,7 @@ New behavior attaches to a documented extension point. Changing the loop itself 
 | Goal | Mechanism |
 |---|---|
 | Add a model provider | register its adapter on `ctx.llm` |
+| Add refreshable model-provider login | register a protocol driver on `ctx.modelAuth`; keep authorization Host-only |
 | Add a model-facing capability | register on `ctx.tools`; its schema joins prompt assembly |
 | Give one session a different capability set | compose an agent preset; a service row there needs an `isolate` realm |
 | Add shell execution | register a `ctx.shell` backend; the local one spawns through `ctx.subprocess` |

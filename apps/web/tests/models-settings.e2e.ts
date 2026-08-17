@@ -26,6 +26,7 @@ import {
 import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/models-settings', import.meta.url))
+const AUTH_EXPECTED = join(SNAPSHOT_DIR, 'auth.expected.md')
 const EMPTY_EXPECTED = join(SNAPSHOT_DIR, 'empty.expected.md')
 const CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'configured.expected.md')
 const DECLARED_EXPECTED = join(SNAPSHOT_DIR, 'declared.expected.md')
@@ -62,6 +63,11 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: '模型' }).click()
     await dialog.getByText('填入各提供方的 API 密钥即可使用其模型。').waitFor({ timeout: 10_000 })
+    await dialog.getByRole('heading', { name: '账户认证', exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByText('OpenAI Codex', { exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('img', { name: '未登录', exact: true }).waitFor({ timeout: 10_000 })
+    const authSnapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(AUTH_EXPECTED, authSnapshot, MODE)
     // The dormant pi-ai adapter contributes its whole installed catalog; no
     // provider is configured yet, so the page is one add button.
     const add = dialog.getByRole('button', { name: '添加提供方' })
@@ -279,7 +285,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
+      'auth.expected.md', 'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
       'delete.expected.md', 'empty.expected.md', 'native-delete.expected.md',
     ])
   })

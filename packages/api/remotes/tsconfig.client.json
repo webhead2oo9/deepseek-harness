@@ -25,6 +25,9 @@
 
     },
     {
+      "path": "../../credentials/model-auth"
+    },
+    {
       "path": "../../extensions/cordis-host-runner"
     },
     {

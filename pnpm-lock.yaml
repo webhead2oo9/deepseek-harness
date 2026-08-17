@@ -876,6 +876,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-model-auth':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -1052,6 +1055,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-llm-codex':
+        specifier: workspace:^
+        version: link:../../llm/llm-codex
       '@deepseek-ai/dsh-llm-deepseek':
         specifier: workspace:^
         version: link:../../llm/llm-deepseek
@@ -1061,6 +1067,12 @@ importers:
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:^
         version: link:../../llm/llm-retry
+      '@deepseek-ai/dsh-model-auth':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth
+      '@deepseek-ai/dsh-model-auth-local':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth-local
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:^
         version: link:../../interaction/permission-presets
@@ -2534,6 +2546,9 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-model-auth':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
@@ -3699,6 +3714,47 @@ importers:
         specifier: workspace:^
         version: link:../../util/launch-environment
 
+  packages/credentials/model-auth:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+
+  packages/credentials/model-auth-local:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-model-auth':
+        specifier: workspace:^
+        version: link:../model-auth
+
   packages/e2b/e2b:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -4734,6 +4790,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-model-auth':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:^
         version: link:../../util/native-command
@@ -5208,6 +5267,31 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-timeout':
+        specifier: workspace:^
+        version: link:../../util/timeout
+
+  packages/llm/llm-codex:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      eventsource-parser:
+        specifier: ^3.1.0
+        version: 3.1.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../llm
+      '@deepseek-ai/dsh-model-auth':
+        specifier: workspace:^
+        version: link:../../credentials/model-auth
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
