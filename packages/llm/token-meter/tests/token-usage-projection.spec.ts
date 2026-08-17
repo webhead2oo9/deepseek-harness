@@ -323,17 +323,17 @@ describe('contextPressure session projection', () => {
     expect(pressure(ctx, session).pressureTokens).toBe(250)
   })
 
-  it('carries the newest recorded capacity and replaces it on a model switch', async () => {
+  it('replaces an adapter fallback with the active model capacity', async () => {
     const { ctx, session } = await harness()
     startStep(session, 1, 1)
-    recordContext(session, 'small', 64_000)
+    recordContext(session, 'fallback-sized', 262_144)
     usageChunk(session, { inputTokens: 100, outputTokens: 10 }, 1, 1)
     expect(pressure(ctx, session)).toEqual({
-      pressureTokens: 100, projectedTokens: 100, contextWindow: 64_000,
+      pressureTokens: 100, projectedTokens: 100, contextWindow: 262_144,
     })
-    recordContext(session, 'large', 256_000)
+    recordContext(session, 'model-sized', 1_000_000)
     expect(pressure(ctx, session)).toEqual({
-      pressureTokens: 100, projectedTokens: 100, contextWindow: 256_000,
+      pressureTokens: 100, projectedTokens: 100, contextWindow: 1_000_000,
     })
   })
 

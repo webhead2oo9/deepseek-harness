@@ -1,10 +1,9 @@
 /** Composer context-occupancy meter: a ring beside the send button fed by the
- * `contextPressure` projection, with a click-open panel of the heuristic
- * `contextBreakdown` composition (system prompt, tools, conversation).
- * Renders nothing until a provider reports both pressure and a route
- * capacity. */
+ * `contextPressure` projection, with a viewport-width-limited panel for remaining
+ * capacity and the heuristic `contextBreakdown` composition. Renders nothing
+ * until the projection reports both pressure and the active model's resolved capacity. */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the `contextPressure` / `contextBreakdown` projection key merges.
 import type {} from '@deepseek-ai/dsh-token-meter/client'
@@ -16,13 +15,6 @@ import css from './ContextMeter.module.css'
 /** Ring geometry: 14px viewBox, 2px stroke. */
 const RADIUS = 5.5
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
-
-/**
- * Marker the localized occupancy sentence is split on, so the panel headline
- * keeps the reading in its own tone while each locale still owns the word
- * order (`45% of context used` / `上下文已用 45%`).
- */
-const READING_SLOT = '\u0000'
 
 /** Panel legend rows, in bar-segment order; each color class carries the shared swatch/segment tint. */
 const ROWS = [
@@ -42,6 +34,8 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
   const breakdown = useProjection('contextBreakdown')
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const panelId = useId()
   const context = contextOccupancy(pressure)
   const available = context !== null
 
@@ -59,7 +53,12 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
       setOpen(false)
     }
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key !== 'Escape') return
+      const activeElement = document.activeElement
+      const focusWithinMeter = activeElement instanceof Node
+        && rootRef.current?.contains(activeElement) === true
+      setOpen(false)
+      if (focusWithinMeter) triggerRef.current?.focus()
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -72,31 +71,29 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
   if (context === null) return null
   const percent = context.percent
   const reading = `${percent}%`
-  const [headBefore = '', headAfter = ''] = t('context.aria', { percent: READING_SLOT })
-    .split(READING_SLOT)
-    .map(part => part.trim())
 
-  // The bar's overall length stays the provider-exact percent; the heuristic
-  // breakdown only proportions its colored parts. A zero-width part is dropped
-  // instead of rendered: `.segment`'s min-width keeps a hairline part visible,
-  // which at 0% occupancy would draw a filled bar over an empty context.
+  // The outer fill fixes the painted length to occupancy. Heuristic shares only
+  // divide that bounded fill, so segment gaps and minimum widths cannot overstate it.
   const breakdownTotal = breakdown === undefined
     ? 0
     : breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens
   const parts = breakdown === undefined || breakdownTotal === 0
-    ? [{ key: 'total', color: undefined, width: percent }]
-    : ROWS.map(row => ({ key: row.key, color: row.color, width: percent * breakdown[row.key] / breakdownTotal }))
-  const segments = parts.filter(part => part.width > 0)
+    ? [{ key: 'total', color: undefined, width: 100 }]
+    : ROWS.map(row => ({ key: row.key, color: row.color, width: 100 * breakdown[row.key] / breakdownTotal }))
+  const segments = percent === 0 ? [] : parts.filter(part => part.width > 0)
+  const remainingTokens = Math.max(0, context.contextWindow - context.usedTokens)
 
   return (
     <span ref={rootRef} className={css.root}>
       <Tooltip label={t('context.aria', { percent: reading })} side="top" delayMs={200} disabled={open}>
         <button
+          ref={triggerRef}
           type="button"
           className={css.trigger}
           aria-label={t('context.aria', { percent: reading })}
           aria-haspopup="dialog"
           aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
           onClick={() => { setOpen(!open) }}
         >
           <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden>
@@ -113,25 +110,28 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
         </button>
       </Tooltip>
       {open && (
-        <div className={css.panel} role="dialog" aria-label={t('context.used')}>
+        <div id={panelId} className={css.panel} role="dialog" aria-label={t('context.panel')}>
           <div className={css.header}>
-            {/* Empty sides collapse through `.headline:empty` so the locale that
-                needs no leading (or trailing) text spends no header gap. */}
-            <span className={css.headline}>{headBefore}</span>
-            <span className={css.percent}>{reading}</span>
-            <span className={css.headline}>{headAfter}</span>
+            <span className={css.summary}>{t('context.aria', { percent: reading })}</span>
             <span className={css.figures}>
               {`~${formatTokens(context.usedTokens)} / ${formatTokens(context.contextWindow)}`}
             </span>
           </div>
           <div className={css.bar}>
-            {segments.map(segment => (
-              <div
-                key={segment.key}
-                className={segment.color === undefined ? css.segment : `${css.segment} ${segment.color}`}
-                style={{ width: `${segment.width}%` }}
-              />
-            ))}
+            {segments.length > 0 && (
+              <div className={css.occupancy} style={{ width: `${percent}%` }}>
+                {segments.map(segment => (
+                  <div
+                    key={segment.key}
+                    className={segment.color === undefined ? css.segment : `${css.segment} ${segment.color}`}
+                    style={{ width: `${segment.width}%` }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          <div className={css.remaining}>
+            {t('context.remaining', { tokens: formatTokens(remainingTokens) })}
           </div>
           {breakdown !== undefined && (
             <dl className={css.rows}>

@@ -53,7 +53,8 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   // fallback path.
   const contextTrigger = await screen.findByRole('button', { name: /of context used/ })
   fireEvent.click(contextTrigger)
-  const contextPanel = await screen.findByRole('dialog', { name: 'of context used' })
+  const contextPanel = await screen.findByRole('dialog', { name: 'Context usage' })
+  within(contextPanel).getByText(/remaining$/)
   within(contextPanel).getByText('System prompt')
   within(contextPanel).getByText('Tools')
   within(contextPanel).getByText('Messages')

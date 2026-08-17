@@ -133,8 +133,9 @@ interface ContextOccupancy {
  * clamp. The numerator is `projectedTokens` — the provider sample carried
  * forward over the surface's movement since — so compaction shows immediately
  * instead of waiting for the next request to report usage; it falls back to the
- * bare sample only for a log whose projection predates that field. Numerator
- * and capacity remain independent last-wins projection fields, so this is a
+ * bare sample only for a log whose projection predates that field. Capacity
+ * is the active model's resolved `request/context` value. Numerator and
+ * capacity remain independent last-wins projection fields, so this is a
  * reference figure rather than an exact measurement of one request (see the
  * token-meter README).
  * @param pressure - the session's context-pressure projection value.

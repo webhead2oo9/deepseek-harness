@@ -20,8 +20,14 @@
   cursor: pointer;
 }
 
-.trigger:hover {
+.trigger:hover,
+.trigger[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
 .track {
@@ -43,7 +49,7 @@
   right: 0;
   z-index: 100;
   box-sizing: border-box;
-  width: 264px;
+  width: min(264px, calc(100vw - 16px));
   padding: 12px;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
@@ -58,39 +64,48 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .figures {
+  flex: none;
   margin-left: auto;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--dsw-alias-label-primary);
-}
-
-.percent {
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
-}
-
-.headline {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-/* The headline brackets the reading, so the side a locale leaves empty must
-   drop out of the flex row rather than spend a gap. */
-.headline:empty {
-  display: none;
 }
 
 .bar {
-  display: flex;
-  gap: 1px;
-  margin: 10px 0 12px;
+  margin-top: 10px;
   height: 4px;
   border-radius: 999px;
   background: var(--dsw-alias-interactive-bg-hover);
   overflow: hidden;
+}
+
+.occupancy {
+  display: flex;
+  gap: 1px;
+  height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.remaining {
+  margin: 4px 0 8px;
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .segment {
