@@ -349,7 +349,7 @@ describe('xAI adapter discovery', () => {
 
   it('loads durable images through the shared Responses transport', async () => {
     const readImage = vi.fn(() => Promise.resolve({ ref: IMAGE_REF, data: Uint8Array.of(1, 2, 3) }))
-    const network = vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+    const network = vi.fn((_url: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(new Response(JSON.stringify({
       error: { message: 'expected transport stop' },
     }), { status: 401, headers: { 'content-type': 'application/json' } })))
     vi.stubGlobal('fetch', network)

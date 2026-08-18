@@ -221,7 +221,8 @@ export class XaiAdapter extends LlmAdapter {
           throw authFailure(error)
         }
       },
-      resolveAttachments: config.resolveAttachments,
+      // exactOptionalPropertyTypes: the property is omitted, never set to undefined.
+      ...(config.resolveAttachments !== undefined && { resolveAttachments: config.resolveAttachments }),
     })
   }
 
