@@ -3,9 +3,9 @@ import { defineConfig } from 'vitest/config'
 import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
 
 // Real-API suite, separate because it spends tokens. Each test self-skips without
-// its provider credential for keyless CI; credentialed workflows preflight the
-// secrets they require. Values may come from the environment or gitignored root
-// `.env`, with provider-specific endpoint overrides where supported.
+// its provider credential. Explicit keyed runs receive values from the
+// environment or gitignored root `.env`, with provider-specific endpoint
+// overrides where supported.
 try {
   // Node >= 21.7 native; throws when the file does not exist.
   process.loadEnvFile(new URL('.env', import.meta.url).pathname)
