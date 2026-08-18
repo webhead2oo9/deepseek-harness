@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ModelAuthError, modelAuthLoginAttemptId, modelAuthProviderId } from '@deepseek-ai/dsh-model-auth'
@@ -16,10 +16,13 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()!()
 })
 
-async function setup(initial?: string): Promise<{ ctx: Context; path: string }> {
+async function setup(initial?: string, initialMode = 0o600): Promise<{ ctx: Context; path: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-model-auth-'))
   const path = join(dir, '.model-auth.json')
-  if (initial !== undefined) await writeFile(path, initial, 'utf8')
+  if (initial !== undefined) {
+    await writeFile(path, initial, { encoding: 'utf8', mode: 0o600 })
+    if (initialMode !== 0o600) await chmod(path, initialMode)
+  }
   const ctx = new Context()
   const fiber = ctx.plugin(LocalModelAuth, { path })
   try {
@@ -350,6 +353,11 @@ describe('local model authentication', () => {
     await expect(badPath).rejects.toBeDefined()
     await badPath.dispose()
     await expect(setup('broken')).rejects.toThrow(/invalid JSON/)
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses a document readable beyond its owner', async () => {
+    await expect(setup('{"version":0,"providers":{}}\n', 0o644))
+      .rejects.toThrow(/readable beyond its owner \(mode 644\)/)
   })
 
   it('registers its invariant ownership', async () => {
