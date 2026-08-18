@@ -27,7 +27,7 @@ Each Exa result contributes its URL, optional title, first non-blank highlight, 
 
 ## Model Experience
 
-`dsh-tool-web` provides the model-visible tool. It receives normalized, bounded sources and provider failures; Exa response fields not mapped into the shared result remain outside model context.
+Indirectly, through [`dsh-tool-web`](../tool-web/README.md), which surfaces this provider's normalized, bounded `WebSearchResult` values and failures while response fields not mapped into that shared result remain hidden.
 
 #### KV Cache effect
 

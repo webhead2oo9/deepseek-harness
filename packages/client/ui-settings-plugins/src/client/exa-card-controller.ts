@@ -53,6 +53,7 @@ export class ExaSearchCardController {
   private readonly form: CardForm<ExaSearchSettings>
   private readonly store: SnapshotStore<ExaSearchCardState>
   private credential: CredentialState = { ref: '', configured: false, writable: true }
+  private credentialReadGeneration = 0
 
   /**
    * @param scope - bound Exa settings namespace.
@@ -95,6 +96,7 @@ export class ExaSearchCardController {
   }
 
   private async readCredential(): Promise<void> {
+    const generation = ++this.credentialReadGeneration
     const ref = refOf(this.scope.getSnapshot())
     if (ref !== this.credential.ref) {
       this.credential = { ref, configured: false, writable: true }
@@ -106,7 +108,9 @@ export class ExaSearchCardController {
     } catch (_credentialReadFailure) {
       return
     }
-    if (!response.result.ok || ref !== refOf(this.scope.getSnapshot())) return
+    if (generation !== this.credentialReadGeneration
+      || !response.result.ok
+      || ref !== refOf(this.scope.getSnapshot())) return
     const view = response.result.value.credentials[ref]
     const next: CredentialState = {
       ref,
@@ -118,12 +122,18 @@ export class ExaSearchCardController {
     this.store.set(this.projection())
   }
 
-  /** Refresh the credential state when the Host reports this reference changed. */
+  /**
+   * Refresh the credential state when the Host reports this reference changed.
+   * @param ref - credential reference reported by the Host.
+   */
   refreshCredential(ref: string): void {
     if (ref === this.credential.ref) void this.readCredential()
   }
 
-  /** @returns the slot registration face. */
+  /**
+   * Return the card actions and rendered-state hook.
+   * @returns the slot registration face.
+   */
   inject(): ExaSearchCardFace {
     return { hooks: { exaSearchCard: this.store }, ...this.form.actions() }
   }

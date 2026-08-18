@@ -542,6 +542,102 @@ describe('WebSearchCardController', () => {
 })
 
 describe('ExaSearchCardController', () => {
+  it('keeps the latest credential state when same-reference reads settle out of order', async () => {
+    const host = stubSettingsScope<ExaSearchSettings>()
+    const older = Promise.withResolvers<unknown>()
+    const describe = vi.fn()
+      .mockReturnValueOnce(older.promise)
+      .mockResolvedValue({
+        rpcId: 'c-2' as never,
+        result: {
+          ok: true as const,
+          value: { credentials: { EXA_API_KEY: { configured: true, writable: false } } },
+        },
+      })
+    const controller = new ExaSearchCardController(
+      host.scope,
+      { credentials: { describe, set: vi.fn() } } as never,
+    )
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const card = controller.inject().hooks.exaSearchCard
+
+    await vi.waitFor(() => {
+      expect(card.getSnapshot()).toMatchObject({ apiKeyConfigured: true, apiKeyWritable: false })
+    })
+    older.resolve({
+      rpcId: 'c-1' as never,
+      result: {
+        ok: true as const,
+        value: { credentials: { EXA_API_KEY: { configured: false, writable: true } } },
+      },
+    })
+    await older.promise
+
+    expect(card.getSnapshot()).toMatchObject({ apiKeyConfigured: true, apiKeyWritable: false })
+
+    const reads = describe.mock.calls.length
+    controller.refreshCredential('OTHER_KEY')
+    expect(describe).toHaveBeenCalledTimes(reads)
+
+    controller.refreshCredential('EXA_API_KEY')
+    await vi.waitFor(() => { expect(describe).toHaveBeenCalledTimes(reads + 1) })
+    expect(card.getSnapshot()).toMatchObject({ apiKeyConfigured: true, apiKeyWritable: false })
+  })
+
+  it('uses the declared credential reference and defaults a missing description', async () => {
+    const host = stubSettingsScope<ExaSearchSettings>()
+    const describe = vi.fn(() => Promise.resolve({
+      rpcId: 'c-1' as never,
+      result: { ok: true as const, value: { credentials: {} } },
+    }))
+    const controller = new ExaSearchCardController(
+      host.scope,
+      { credentials: { describe, set: vi.fn() } } as never,
+    )
+    host.publish({
+      status: 'ready', writable: true, value: { apiKeyEnv: 'CUSTOM_EXA_KEY' }, user: {},
+    })
+
+    await vi.waitFor(() => {
+      expect(describe).toHaveBeenCalledWith({ refs: ['CUSTOM_EXA_KEY'] })
+    })
+    expect(controller.inject().hooks.exaSearchCard.getSnapshot()).toMatchObject({
+      apiKeyConfigured: false,
+      apiKeyWritable: true,
+    })
+
+    host.publish({ status: 'ready', writable: true, value: { apiKeyEnv: '' }, user: {} })
+    await vi.waitFor(() => { expect(describe).toHaveBeenCalledWith({ refs: ['EXA_API_KEY'] }) })
+  })
+
+  it('uses the authoritative read after failed credential requests', async () => {
+    const host = stubSettingsScope<ExaSearchSettings>()
+    const describe = vi.fn((): Promise<unknown> => Promise.reject(new Error('offline')))
+    const set = vi.fn(() => Promise.reject(new Error('offline')))
+    const controller = new ExaSearchCardController(
+      host.scope,
+      { credentials: { describe, set } } as never,
+    )
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const face = controller.inject()
+    await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
+    describe.mockImplementation(() => Promise.resolve({
+      rpcId: 'c-2' as never,
+      result: {
+        ok: true as const,
+        value: { credentials: { EXA_API_KEY: { configured: true, writable: true } } },
+      },
+    }))
+
+    face.edit('apiKey', 'exa-secret')
+    face.save()
+
+    await vi.waitFor(() => {
+      expect(face.hooks.exaSearchCard.getSnapshot()).toMatchObject({ apiKeyConfigured: true, dirty: false })
+    })
+    expect(set).toHaveBeenCalledWith({ ref: 'EXA_API_KEY', value: 'exa-secret' })
+  })
+
   it('projects Exa defaults and writes staged provider settings', async () => {
     const host = stubSettingsScope<ExaSearchSettings>()
     acceptWrites(host)

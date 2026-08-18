@@ -3077,22 +3077,31 @@ export interface Config {
 需要：`web`
 
 ```ts config-catalog
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
+/** Live plugin configuration served through the settings namespace. */
 export interface Config {
-  /** Exa API key. Falls back to `$EXA_API_KEY`. Empty → provider unavailable. */
+  /** Literal Exa API key; prefer {@link apiKeyEnv}. */
   apiKey?: string
-  /** Endpoint base; `/search` is appended. Defaults to the public API. */
+  /** Credential reference resolved for each search. */
+  apiKeyEnv?: string
+  /** Exa endpoint base; `/search` is appended. */
   baseURL?: string
-  /** Retrieval mode sent as Exa's `type`. Defaults to `auto`. */
-  searchType?: 'auto' | 'keyword' | 'neural'
-  /** Default result count when a request carries no `maxResults`. Omitted = none. */
+  /** Standard Exa retrieval mode. */
+  searchType?: ExaSearchType
+  /** Default result count when the shared request carries no bound. */
   numResults?: number
-  /** Highlight sentences requested per result. Defaults to 1. */
-  highlightsPerResult?: number
+  /** Whether Exa filters unsafe results. */
+  moderation?: boolean
+  /** Optional highlight character budget per result. */
+  highlightsMaxCharacters?: number
+  /** Optional cached-content age in hours; `0` fetches fresh and `-1` is cache-only. */
+  maxAgeHours?: number
 }
+
+/** Standard retrieval modes that return ordinary search results. */
+export type ExaSearchType = 'auto' | 'fast' | 'instant'
 ```
 
-来源：[`packages/web/web-search-exa/src/index.ts:38`](../packages/web/web-search-exa/src/index.ts)
+来源：[`packages/web/web-search-exa/src/index.ts:43`](../packages/web/web-search-exa/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-perplexity"></a>
 
