@@ -22,10 +22,18 @@
 | `toolName` | 面向模型的名称，默认 `subagent`；每个已加载实例必须不同。 |
 | `enableRunInBackground` | 公开后台模式，默认 `true`；禁用时也会拒绝强制后台调用。 |
 | `backgroundMode` | 后台生命周期策略，默认 `one-shot`。`one-shot` 默认前台调用；`continuable` 默认后台调用，要求提供方具备 `prepareContinuable` 能力，并返回持久化子 agent ID，且不要求加载后续消息工具。 |
-| `agentOptions` | 传给具体提供方的子 agent `provider`、`model` 和正整数 `maxTokens`；进程内提供方会用显式值覆盖继承的父级选项。 |
+| `agentOptions` | 传给具体提供方的子 agent `provider`、`model` 和正整数 `maxTokens`；provider/model 字段要求后端具备 `modelRoute` 能力，进程内提供方会用显式值覆盖继承的父级选项。 |
 | `persona` | 每个子 agent 独立的 persona；要求提供方具备 `persona` 能力。 |
 | `toolFilter` | 每个子 agent 独立的全局工具限制；要求提供方具备 `toolFilter` 能力。 |
 | `maxDepth` | 绝对委派深度上限，默认 `3`（`0` 禁止委派）；数值上限要求 `depthLimit` 能力，缺失时挂载失败。对于预算由子 harness 拥有的进程外提供方，`'provider-managed'` 不发送上限。工具在达到上限时仍然可见；每次尝试启动都会检查调用 agent 的当前深度，被拒绝时返回出错的工具结果。 |
+
+## 模型配置
+
+`ctx.subagents` 拥有共享的 `subagent-model-selection` 设置命名空间。其 `profiles` 字典把每个面向模型的名称映射到说明、不透明的 provider/model 对以及可选的子代理系统指令；`allowDirectModelSelection` 默认为 `false`。Web 的“子代理”设置页面编辑用户层，没有设置提供方时则使用 `subagent` 服务的组合配置作为部署默认值。
+
+具有 `modelRoute` 能力的后端会公开仅含路由的配置；携带指令的配置还要求后端具备 `instruction` 能力。开关启用时会公开直接的 `provider` 与 `model` 字段。一次调用只能选择一个配置或一组完整的直接路由。解析后的路由只替换已配置的子 agent provider/model，并保留 `maxTokens` 与其他无关选项。不具备该能力的后端不会公开这些字段，并会拒绝强制传入的路由参数而不是忽略它们。provider 与 model 字符串不受实时目录限制；若路由不可用，子 agent LLM 运行时会在执行到该路由时报告错误。
+
+配置变化会为后续父级请求重新注册工具定义。可继续子 agent 持久化解析后的 provider/model 对和子代理系统指令，而不是配置名称，因此编辑或删除配置不会重定向或重写已建立的子 agent。
 
 ## 并发
 
@@ -37,15 +45,15 @@
 
 #### 模型看到的内容
 
-当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent)。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
+当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent)。提供方是否继承上下文会改变工具描述和提示词描述。兼容后端会添加当前配置枚举与说明，并在开关启用时添加直接 provider/model 字段。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
 
 #### Token 影响
 
-每个父级请求都会产生固定的 schema token 开销；每个提供方实例增加一个 schema，每个可继续实例还会增加一个简短的系统提示词 section。
+每个父级请求都有固定的基础 schema 开销。已配置的名称和说明会增加可变 schema 文本；直接选择会增加两个可选字符串字段。每个提供方实例增加一个 schema，每个可继续实例还会增加一个简短的系统提示词 section。
 
 #### KV Cache 影响
 
-只要提供方实例、名称、描述和 schema 不变，前缀就保持稳定。提供方注册生命周期可能从首个变化的工具定义开始，使父级复用失效。
+只要提供方实例、名称、模型配置、描述和 schema 不变，前缀就保持稳定。配置/设置或提供方注册变化可能从首个变化的工具定义开始，使父级复用失效。
 
 ### 前台结果
 
@@ -79,4 +87,4 @@
 
 - **后台运行不通过本工具公开结果**：一次性任务的最终输出通过通用 Task 接口收集，可继续子 agent 的输出留在其自身会话中，按其 subagent id 读取。结算通知会说明该子 agent 如何结束，并携带可能存在的最终 assistant 消息，但它不是本次调用的返回值，也无法在此等待。
 - **等待中的一次性实例较晚才发现重复名称**（`TODO(subagent-dup-toolname)`）：可继续实例会在插件应用期间预留提示词 section 名称，但若要阻止等待中的一次性实例回滚提供方注册，仍需要一份预期名称注册表。
-- **每个实例的子 agent 策略固定**：其他模型、persona、工具过滤器或深度上限都需要另一个名称不同的工具。
+- **每个实例的非路由子 agent 策略固定**：其他 persona、工具过滤器、token 预算或深度上限都需要另一个名称不同的工具。

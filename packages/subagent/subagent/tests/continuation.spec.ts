@@ -11,8 +11,8 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
-import type { GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelReasoningInfo, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
@@ -77,8 +77,11 @@ async function setupWith(adapter: LlmAdapter, options: { persistence?: boolean }
   return { ctx, parent, disposePersistence, root }
 }
 
-async function setup(script: Script, options: { persistence?: boolean } = {}) {
-  const adapter = new MockAdapter(script)
+async function setup(
+  script: Script,
+  options: { persistence?: boolean; reasoning?: LlmModelReasoningInfo } = {},
+) {
+  const adapter = new MockAdapter(script, options.reasoning)
   const booted = await setupWith(adapter, options)
   return { ...booted, adapter }
 }
@@ -195,7 +198,10 @@ describe('SubagentRuntime.startContinuable', () => {
     const start = vi.fn(async () => { throw new Error('must not dispatch') })
     ctx.subagents.registerProvider({
       name: 'one-shot',
-      capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+      capabilities: {
+        outputSchema: false, depthLimit: false, toolFilter: false,
+        persona: false, instruction: false, reasoningEffort: false, modelRoute: false,
+      },
       inheritsParentContext: false,
       start,
     })
@@ -412,27 +418,43 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(loaded.meta.seedLength).toBeGreaterThan(0)
   })
 
-  it('records the declared persona in the descriptor and reapplies it on cold resume', async () => {
-    const { ctx, parent } = await setup([textResponse('scoped'), textResponse('resumed')])
+  it('records child composition and reapplies it on cold resume', async () => {
+    const { ctx, parent, adapter } = await setup(
+      [textResponse('scoped'), textResponse('resumed')],
+      { reasoning: { efforts: [{ id: ReasoningEffortId('high'), name: 'High' }] } },
+    )
     const started = await ctx.subagents.startContinuable({
       ...startSpec(parent),
       request: {
         prompt: message('scoped work'),
         parent,
         persona: 'You are scoped.',
+        instruction: 'Verify every claim.',
+        reasoningEffort: ReasoningEffortId('high'),
       },
     })
     await waitNoActivation(ctx, started.childId)
 
     const loaded = await ctx.sessionPersistence.load(started.childId)
     const descriptor = loaded.events.find(event => event.type === 'subagent/descriptor')
-    expect(descriptor?.data).toMatchObject({ persona: 'You are scoped.' })
+    expect(descriptor?.data).toMatchObject({
+      persona: 'You are scoped.',
+      instruction: 'Verify every claim.',
+      reasoningEffort: 'high',
+    })
+    const instructedBeforeResume = adapter.requests.filter(
+      request => request.system?.includes('Verify every claim.') === true && request.reasoningEffort === 'high',
+    ).length
+    expect(instructedBeforeResume).toBe(1)
 
     // Cold resume reconstructs the declared composition from that descriptor.
     await followup(ctx, parent, started.childId, message('resume it'))
     await waitNoActivation(ctx, started.childId)
     const resumed = await ctx.sessionPersistence.load(started.childId)
     expect(hasUserText(resumed.events, 'resume it')).toBe(true)
+    expect(adapter.requests.filter(
+      request => request.system?.includes('Verify every claim.') === true && request.reasoningEffort === 'high',
+    )).toHaveLength(instructedBeforeResume + 1)
   })
 })
 
@@ -484,7 +506,10 @@ describe('SubagentRuntime.followup residency routing', () => {
     await ctx.plugin(SubagentInvariant)
     const disposeProvider = ctx.subagents.registerProvider({
       name: 'retired',
-      capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+      capabilities: {
+        outputSchema: false, depthLimit: false, toolFilter: false,
+        persona: false, instruction: false, reasoningEffort: false, modelRoute: false,
+      },
       inheritsParentContext: false,
       start: async () => { throw new Error('one-shot start is not used') },
       prepareContinuable: () => Promise.resolve({}),

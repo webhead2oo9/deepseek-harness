@@ -185,6 +185,15 @@ describe('native Codex event translation', () => {
       '[DONE]',
     ])).at(-1)).toMatchObject({ reason: { kind: 'error', failure: { code: 'CONTENT_FILTER' } } })
     expect((await collect([
+      JSON.stringify({
+        type: 'response.incomplete',
+        response: { incomplete_details: { reason: 'context_length_exceeded' } },
+      }),
+      '[DONE]',
+    ])).at(-1)).toMatchObject({
+      reason: { kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED' } },
+    })
+    expect((await collect([
       JSON.stringify({ type: 'error', error: { message: 'socket failed' } }),
       '[DONE]',
     ])).at(-1)).toEqual({ type: 'finish', reason: { kind: 'error', failure: { message: 'socket failed', code: 'CODEX_RESPONSE_FAILED' } } })
@@ -192,6 +201,21 @@ describe('native Codex event translation', () => {
       JSON.stringify({ type: 'error', code: 'wire' }),
       '[DONE]',
     ])).at(-1)).toMatchObject({ reason: { kind: 'error', failure: { message: 'Codex stream failed', code: 'wire' } } })
+    expect((await collect([
+      JSON.stringify({ type: 'error', error: { type: 'context_window_exceeded' } }),
+      '[DONE]',
+    ])).at(-1)).toMatchObject({
+      reason: { kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED' } },
+    })
+    expect((await collect([
+      JSON.stringify({
+        type: 'response.failed',
+        response: { error: { message: 'input exceeds model context window', code: 'context_length_exceeded' } },
+      }),
+      '[DONE]',
+    ])).at(-1)).toMatchObject({
+      reason: { kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED' } },
+    })
   })
 
   it('rejects typed malformed events and streams without a terminal response event', async () => {

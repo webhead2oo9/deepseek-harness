@@ -105,20 +105,31 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     await ctx.fiber.dispose()
   })
 
-  it('initializes the child with the configured provider/model/maxTokens and the parent cwd', async () => {
+  it('uses configured route defaults and honors per-request provider/model overrides', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'subagent-dsh-sdk-init-'))
     const recordFile = join(tmp, 'init.jsonl')
     try {
       const ctx = await setup({ FAKE_RECORD_INIT: recordFile }, { maxTokens: 4096 })
-      const run = await ctx.subagents.start('dsh-sdk', request())
-      await run.result
-      await run.dispose()
+      const defaultRun = await ctx.subagents.start('dsh-sdk', request())
+      await defaultRun.result
+      await defaultRun.dispose()
+      const routedRun = await ctx.subagents.start('dsh-sdk', {
+        ...request(),
+        agentOptions: { provider: 'runinfraprovider', model: 'reasoning-model' },
+      })
+      await routedRun.result
+      await routedRun.dispose()
       const { readFileSync } = await import('node:fs')
       const records = readFileSync(recordFile, 'utf8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
       expect(records).toEqual([{
         cwd: process.cwd(),
         provider: 'fake-provider',
         model: 'fake-model',
+        maxTokens: 4096,
+      }, {
+        cwd: process.cwd(),
+        provider: 'runinfraprovider',
+        model: 'reasoning-model',
         maxTokens: 4096,
       }])
       await ctx.fiber.dispose()
@@ -377,6 +388,9 @@ describe('dsh-subagent-dsh-sdk provider', () => {
       depthLimit: false,
       toolFilter: false,
       persona: false,
+      instruction: false,
+      reasoningEffort: false,
+      modelRoute: true,
     })
     await fiber.dispose()
     expect(ctx.subagents.getProvider('sdk-hmr')).toBeUndefined()

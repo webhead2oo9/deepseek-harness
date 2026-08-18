@@ -45,6 +45,9 @@ type Phase =
   }
   | { kind: 'running'; abort: AbortController; turn: number; step: number; wakeRequested: boolean }
 
+/** Protocol safety bound for admission plugins that repeatedly mutate one pending request. */
+const MAX_REQUEST_ADMISSION_REBUILDS = 8
+
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
 type PreparedStep =
@@ -337,12 +340,43 @@ export class ReactLoopAgent implements Agent {
     const system = renderPrompt(assembly)
 
     while (true) {
-      const { request, preparedCall } = await this.buildRequest(
+      const built = await this.buildRequest(
         turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
       )
+      let { request } = built
+      let rebuild = 0
+      while (true) {
+        const generation = this.session.surface.replaceGeneration
+        const admission = await this.dispatch.waterfall(
+          'agent/request-admission', {
+            request,
+            contextWindow: built.preparedCall?.context?.contextWindow,
+            rebuild,
+            turn,
+            step,
+            signal,
+          },
+          () => Promise.resolve(undefined),
+        )
+        signal.throwIfAborted()
+        if (admission?.kind !== 'rebuild') break
+        if (this.session.surface.replaceGeneration <= generation) {
+          throw new Error('agent/request-admission requested rebuild without a durable surface replacement')
+        }
+        if (rebuild + 1 >= MAX_REQUEST_ADMISSION_REBUILDS) {
+          throw new Error(
+            `agent/request-admission exceeded ${MAX_REQUEST_ADMISSION_REBUILDS} durable rebuilds for one request`,
+          )
+        }
+        request = markAgentLoopRequest(deepFreeze({
+          ...request,
+          messages: this.session.deriveMessages(),
+        }))
+        rebuild += 1
+      }
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
-      const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
+      const stream = built.preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
       signal.throwIfAborted()
       for await (const chunk of stream) {
         signal.throwIfAborted()
@@ -358,7 +392,7 @@ export class ReactLoopAgent implements Agent {
             step,
             provider: request.provider,
             failure: finish.failure,
-            retryPolicy: preparedCall?.retryPolicy,
+            retryPolicy: built.preparedCall?.retryPolicy,
             signal,
           },
           () => Promise.resolve<RequestErrorAction>(undefined),

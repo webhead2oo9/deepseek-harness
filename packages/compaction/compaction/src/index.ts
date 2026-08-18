@@ -8,7 +8,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { EpochHeader, Session } from '@deepseek-ai/dsh-session'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { CompactionResult } from './types.ts'
 
@@ -21,8 +21,10 @@ export { toolPairingBalancedAfter, toolPairingBalancedBefore } from './tool-pair
 export { compactCheckpointSource, isCompactCheckpointSource } from './checkpoint.ts'
 export type { CompactionCheckpointSource } from './checkpoint.ts'
 
-/** Why automatic policy is asking a backend to consider compaction. */
-export type CompactionTrigger = 'pressure' | 'context-overflow'
+/** Exact request facts or provider failure asking automatic policy to consider compaction. */
+export type CompactionTrigger =
+  | { kind: 'pressure'; requestHeader: EpochHeader; contextWindow?: number }
+  | { kind: 'context-overflow' }
 
 /** Expected failure classes for an explicit idle-session compaction request. */
 export type ManualCompactionErrorCode =
@@ -99,9 +101,9 @@ export abstract class CompactionEngine extends Service {
   }
 
   /**
-   * Consider automatic compaction for one explicit trigger. Pressure policy
-   * uses the latest durable routed request, while context-overflow policy may
-   * force a useful balanced reduction even below the normal threshold. Return
+   * Consider automatic compaction for one explicit trigger. Pressure carries
+   * the complete imminent header and active route capacity; context overflow
+   * may force a useful balanced reduction even below the normal threshold. Return
    * `null` when no safe range can be compacted. A single oversized retained
    * unit or request envelope cannot be repaired through surface compaction.
    *

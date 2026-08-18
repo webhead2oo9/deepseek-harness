@@ -71,6 +71,8 @@ export interface Config {
   clientVersion?: string
   /** Context-window fallback for models that omit it from discovery. */
   defaultContextWindow?: number
+  /** Active Codex context override, clamped to a discovered model maximum when present. */
+  modelContextWindow?: number
   /** Maximum silence between streaming response events in milliseconds. */
   streamIdleTimeoutMs?: number
   /** Lifetime of a successful model-discovery result in milliseconds. */
@@ -100,6 +102,7 @@ export const Config: z<Config> = z.object({
   baseURL: z.string().default(CHATGPT_CODEX_BASE_URL),
   clientVersion: z.string().default(DEFAULT_CODEX_CLIENT_VERSION),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CODEX_CONTEXT_WINDOW),
+  modelContextWindow: z.number().step(1).min(1),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_CODEX_STREAM_IDLE_TIMEOUT_MS),
   modelCacheTtlMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_CODEX_MODEL_CACHE_TTL_MS),
   retryPolicy: RetryPolicySchema,
@@ -160,6 +163,11 @@ export function resolveCodexOptions(config: Config): ResolvedCodexOptions {
   if (!Number.isSafeInteger(defaultContextWindow) || defaultContextWindow <= 0) {
     throw new Error('llm-codex: defaultContextWindow must be a positive safe integer')
   }
+  const modelContextWindow = config.modelContextWindow
+  if (modelContextWindow !== undefined
+    && (!Number.isSafeInteger(modelContextWindow) || modelContextWindow <= 0)) {
+    throw new Error('llm-codex: modelContextWindow must be a positive safe integer')
+  }
   const retryPolicy: ResolvedRetryPolicy = resolveRetryPolicy(config.retryPolicy, 'llm-codex: retryPolicy')
   return {
     oauth: {
@@ -177,6 +185,7 @@ export function resolveCodexOptions(config: Config): ResolvedCodexOptions {
       baseURL: normalizedHttpUrl(config.baseURL ?? CHATGPT_CODEX_BASE_URL, 'baseURL'),
       clientVersion,
       defaultContextWindow,
+      ...modelContextWindow === undefined ? {} : { modelContextWindow },
       streamIdleTimeoutMs: timer(config.streamIdleTimeoutMs, DEFAULT_CODEX_STREAM_IDLE_TIMEOUT_MS, 'streamIdleTimeoutMs'),
       modelCacheTtlMs: timer(config.modelCacheTtlMs, DEFAULT_CODEX_MODEL_CACHE_TTL_MS, 'modelCacheTtlMs'),
       retryPolicy,

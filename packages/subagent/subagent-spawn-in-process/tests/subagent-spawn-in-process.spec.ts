@@ -1,4 +1,4 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId, type LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 import { Context, symbols, type EffectMeta } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -32,9 +32,9 @@ async function mountInvariants(ctx: Context): Promise<void> {
  * The parent is a real config agent; the spawn provider creates a real child
  * agent on the same context and we assert its output.
  */
-async function setup(script: Script) {
+async function setup(script: Script, reasoning?: LlmModelReasoningInfo) {
   const ctx = new Context()
-  const adapter = new MockAdapter(script)
+  const adapter = new MockAdapter(script, reasoning)
   await mountAgentLoopTestDependencies(ctx)
   await mountInvariants(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
@@ -282,10 +282,13 @@ describe('dsh-subagent-spawn-in-process', () => {
     await parentHandle.dispose()
   })
 
-  it('advertises every start-time capability (depthLimit, outputSchema, toolFilter, persona)', async () => {
+  it('advertises every start-time capability (depthLimit, outputSchema, toolFilter, persona, instruction, modelRoute)', async () => {
     const { ctx } = await setup([])
     const provider = ctx.subagents.getProvider('spawn')!
-    expect(provider.capabilities).toEqual({ outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    expect(provider.capabilities).toEqual({
+      outputSchema: true, depthLimit: true, toolFilter: true,
+      persona: true, instruction: true, reasoningEffort: true, modelRoute: true,
+    })
   })
 
   it('unregisters the provider when its fiber is disposed (HMR safety)', async () => {
@@ -399,6 +402,23 @@ describe('dsh-subagent-spawn-in-process', () => {
       expect(childRequest.system).toContain('You are the tersest test runner.')
       // The parent's earlier request carried no such persona.
       expect(adapter.requests[0]!.system ?? '').not.toContain('tersest test runner')
+      await run.dispose()
+    })
+
+    it('adds child-only instruction and reasoning effort without replacing the persona', async () => {
+      const { ctx, parent, adapter } = await setup([textResponse('child answer')], {
+        efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
+      })
+      const run = await start(ctx, 'spawn', {
+        prompt: [{ type: 'text', text: 'do X' }],
+        parent,
+        instruction: 'Check every claim against primary evidence.',
+        reasoningEffort: ReasoningEffortId('high'),
+      })
+      await run.result
+      const childRequest = adapter.requests.at(-1)!
+      expect(childRequest.system).toContain('Check every claim against primary evidence.')
+      expect(childRequest.reasoningEffort).toBe('high')
       await run.dispose()
     })
 

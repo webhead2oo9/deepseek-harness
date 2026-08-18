@@ -42,6 +42,7 @@ describe('Codex plugin configuration', () => {
       baseURL: 'https://codex.example/api',
       clientVersion: '1.2.3',
       defaultContextWindow: 4,
+      modelContextWindow: 1_000_000,
       streamIdleTimeoutMs: 5,
       modelCacheTtlMs: 6,
     })
@@ -52,7 +53,7 @@ describe('Codex plugin configuration', () => {
     })
     expect(explicit.connection).toMatchObject({
       baseURL: 'https://codex.example/api', clientVersion: '1.2.3', defaultContextWindow: 4,
-      streamIdleTimeoutMs: 5, modelCacheTtlMs: 6,
+      modelContextWindow: 1_000_000, streamIdleTimeoutMs: 5, modelCacheTtlMs: 6,
     })
   })
 
@@ -75,6 +76,8 @@ describe('Codex plugin configuration', () => {
     [{ clientVersion: '' }, /clientVersion/],
     [{ defaultContextWindow: 0 }, /defaultContextWindow/],
     [{ defaultContextWindow: Number.MAX_VALUE }, /defaultContextWindow/],
+    [{ modelContextWindow: 0 }, /modelContextWindow/],
+    [{ modelContextWindow: Number.MAX_VALUE }, /modelContextWindow/],
     [{ loginTimeoutMs: 0 }, /loginTimeoutMs/],
     [{ deviceTimeoutMs: Number.NaN }, /deviceTimeoutMs/],
     [{ refreshWindowMs: -1 }, /refreshWindowMs/],

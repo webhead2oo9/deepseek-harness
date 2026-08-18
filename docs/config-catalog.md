@@ -476,7 +476,7 @@ Requires: `llm` · `tokenMeter` · `sessions`
 export interface BasicCompactionConfig extends CompactionPolicyConfig {
   /** Exact provider/model overrides; duplicate targets fail plugin load. */
   modelPolicies?: ModelCompactPolicyConfig[]
-  /** Enable automatic step-boundary pressure and overflow-recovery listeners. Defaults to `true`. */
+  /** Enable automatic complete-request admission and overflow-recovery listeners. Defaults to `true`. */
   auto?: boolean
 }
 
@@ -869,6 +869,8 @@ export interface Config {
   clientVersion?: string
   /** Context-window fallback for models that omit it from discovery. */
   defaultContextWindow?: number
+  /** Active Codex context override, clamped to a discovered model maximum when present. */
+  modelContextWindow?: number
   /** Maximum silence between streaming response events in milliseconds. */
   streamIdleTimeoutMs?: number
   /** Lifetime of a successful model-discovery result in milliseconds. */
@@ -2111,6 +2113,39 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 Source: [`packages/storage/storage-sqlite/src/index.ts:24`](../packages/storage/storage-sqlite/src/index.ts)
 
+<a id="deepseek-aidsh-subagent"></a>
+
+## `@deepseek-ai/dsh-subagent`
+
+```ts config-catalog
+/** Composition defaults for shared subagent model selection. */
+export type Config = SubagentModelSelectionSettings
+
+/** Shared profile and direct-selection policy. */
+export interface SubagentModelSelectionSettings {
+  /** Whether delegation tools expose direct provider/model arguments. */
+  readonly allowDirectModelSelection: boolean
+  /** Named provider/model routes exposed by compatible delegation tools. */
+  readonly profiles: Readonly<Record<string, SubagentModelProfile>>
+}
+
+/** One deployment-described child model route. */
+export interface SubagentModelProfile {
+  /** Model-facing profile purpose. */
+  readonly description: string
+  /** Registered LLM provider route. */
+  readonly provider: string
+  /** Provider-owned model id. */
+  readonly model: string
+  /** Optional child-only system instruction applied to every delegation using this profile. */
+  readonly instruction?: string
+  /** Optional adapter-owned reasoning effort applied to every delegation using this profile. */
+  readonly reasoningEffort?: string
+}
+```
+
+Source: [`packages/subagent/subagent/src/index.ts:190`](../packages/subagent/subagent/src/index.ts)
+
 <a id="deepseek-aidsh-subagent-acp"></a>
 
 ## `@deepseek-ai/dsh-subagent-acp`
@@ -2742,7 +2777,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:29`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:34`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 
@@ -3141,6 +3176,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-settings-subagents` ([`packages/client/ui-settings-subagents/src/index.ts`](../packages/client/ui-settings-subagents/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-subagent` ([`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts))
@@ -3171,7 +3207,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
 - `@deepseek-ai/dsh-skill-badge` — requires `skills` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))
 - `@deepseek-ai/dsh-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
-- `@deepseek-ai/dsh-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `@deepseek-ai/dsh-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
 - `@deepseek-ai/dsh-terminal` ([`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts))
 - `@deepseek-ai/dsh-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))

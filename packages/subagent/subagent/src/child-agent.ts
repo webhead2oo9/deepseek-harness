@@ -10,6 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
@@ -123,6 +124,10 @@ export function childSessionMeta(
 export interface ChildComposition {
   /** Per-child persona shadowing the deployment persona. */
   readonly persona?: string | undefined
+  /** Additional child-only system instruction. */
+  readonly instruction?: string | undefined
+  /** Adapter-owned reasoning effort applied to child model calls. */
+  readonly reasoningEffort?: ReasoningEffortId | undefined
   /** Per-child tool scoping. */
   readonly toolFilter?: ToolRestriction | undefined
 }
@@ -141,7 +146,7 @@ export const SUBAGENT_DELEGATION_CONTEXT
 /**
  * Compose one child inside its creation window: join its parent's preset,
  * register the fixed delegation-scope statement, then apply the child's own
- * shadowing persona section and tool restriction, all owned by the child's
+ * shadowing persona section, additional instruction, and tool restriction, all owned by the child's
  * scope and therefore invisible to its parent and siblings. Creation and cold
  * resume both pass through here.
  *
@@ -170,6 +175,16 @@ export function applyChildComposition(
   childCtx.systemPrompt.context({ name: 'subagent:delegation', order: 120, text: SUBAGENT_DELEGATION_CONTEXT })
   if (composition.persona !== undefined) {
     childCtx.systemPrompt.section({ name: 'deployment:persona', order: 0, text: composition.persona })
+  }
+  if (composition.instruction !== undefined) {
+    childCtx.systemPrompt.section({ name: 'subagent:profile-instruction', order: 5, text: composition.instruction })
+  }
+  const reasoningEffort = composition.reasoningEffort
+  if (reasoningEffort !== undefined) {
+    childCtx.on('agent/request', async (_payload, next) => ({
+      ...await next(),
+      reasoningEffort,
+    }))
   }
   if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
 }

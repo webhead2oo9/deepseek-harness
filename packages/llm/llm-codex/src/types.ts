@@ -68,6 +68,7 @@ export interface CodexCatalogModel {
   default_reasoning_level?: string
   supported_reasoning_levels?: Array<{ effort: string; description?: string }>
   context_window?: number
+  max_context_window?: number
   supported_in_api?: boolean
   visibility?: string
 }

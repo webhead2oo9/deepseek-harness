@@ -8,6 +8,38 @@ Service Definition: [dsh-subagent](../../packages/subagent/subagent) (`ctx.subag
 
 Sources: [`packages/subagent/subagent/src/types.ts`](../../packages/subagent/subagent/src/types.ts), [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts), and [`packages/subagent/subagent/src/continuation.ts`](../../packages/subagent/subagent/src/continuation.ts)
 
+## Model-selection settings
+
+`SubagentRuntime` registers `subagent-model-selection` with the optional settings service and exposes detached snapshots through `modelSelection()`. Composition values form the base layer. Profile provider/model identifiers are opaque; the LLM runtime, not settings validation, decides whether a route is available. A profile may also carry a child-only system instruction and an opaque adapter-owned reasoning effort. `subagent/model-selection-updated` tells consumers to rebuild derived model-visible schemas after attach, detach, or a committed change.
+
+```ts type-equiv
+/** One deployment-described child model route. */
+interface SubagentModelProfile {
+  /** Model-facing profile purpose. */
+  readonly description: string
+  /** Registered LLM provider route. */
+  readonly provider: string
+  /** Provider-owned model id. */
+  readonly model: string
+  /** Optional child-only system instruction applied to every delegation using this profile. */
+  readonly instruction?: string
+  /** Optional adapter-owned reasoning effort applied to every delegation using this profile. */
+  readonly reasoningEffort?: string
+}
+```
+
+```ts type-equiv
+/** Shared profile and direct-selection policy. */
+interface SubagentModelSelectionSettings {
+  /** Whether delegation tools expose direct provider/model arguments. */
+  readonly allowDirectModelSelection: boolean
+  /** Named provider/model routes exposed by compatible delegation tools. */
+  readonly profiles: Readonly<Record<string, SubagentModelProfile>>
+}
+```
+
+Continuable descriptors store the resolved provider/model pair, child system instruction, and reasoning effort rather than the profile name, so a profile edit does not retarget or rewrite an established child. The [subagent model profiles Agent Note](../../.agents/notes/implemented/feature/2026-08-17-subagent-model-profiles.md) owns this durability decision and the conditional tool behavior.
+
 ## Two kinds of capability, discovered two ways
 
 A provider advertises its **start-time** features on a static descriptor the service checks BEFORE a one-shot run exists; a request that needs one the provider lacks is rejected loud (`SubagentError('UNSUPPORTED_CAPABILITY')`), never accepted-then-ignored. Those flags describe only the one-shot [`start()`](#the-provider-contract-subagentprovider) path, where the provider composes the child. **Continuable** children are composed by the continuation manager itself, so they are gated by one optional method whose presence IS the capability, with TS narrowing as the discovery mechanism: [`SubagentProvider.prepareContinuable`](#the-provider-contract-subagentprovider).
@@ -21,20 +53,27 @@ A provider advertises its **start-time** features on a static descriptor the ser
  * {@link SubagentProvider.start} path, where the provider composes the child;
  * continuable children are composed by the continuation manager itself and are
  * gated by {@link SubagentProvider.prepareContinuable} instead. Each flag
- * corresponds one-to-one to a {@link SubagentStartRequest} option: `depthLimit`
- * to `maxDepth`; the other names match.
+ * corresponds to a {@link SubagentStartRequest} option: `depthLimit` to
+ * `maxDepth`, `modelRoute` to provider/model fields in `agentOptions`, and the
+ * other names match.
  */
 interface SubagentCapabilities {
   readonly outputSchema: boolean
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  /** Whether one-shot children install a requested child-only system instruction. */
+  readonly instruction: boolean
+  /** Whether one-shot children apply a requested reasoning effort to model calls. */
+  readonly reasoningEffort: boolean
+  /** Whether one-shot children honor requested `agentOptions.provider` and `agentOptions.model` routes. */
+  readonly modelRoute: boolean
 }
 ```
 
 ## The one-shot start request
 
-The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional output schema, depth, tool filter, and persona require matching capability flags. Unsupported schemas fail at start; in-process backends scope filters and personas to child creation and implement the supported object-rooted schema with a forced capture tool.
+The tool layer builds this request from the model input, shared model-profile settings, and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional output schema, depth, tool filter, persona, child system instruction, reasoning effort, and explicit provider/model route require matching capability flags. Unsupported requests fail at start; in-process backends resolve provider/model over the parent route, scope filters and personas to child creation, and implement the supported object-rooted schema with a forced capture tool.
 
 ```ts type-equiv
 /**
@@ -63,6 +102,10 @@ interface SubagentStartRequest {
    * remaining turn work when it fires afterward.
    */
   readonly signal: AbortSignal
+  /**
+   * Child Agent options. Explicit provider/model fields require
+   * {@link SubagentCapabilities.modelRoute}; other fields remain provider-specific.
+   */
   readonly agentOptions?: AgentOptions
   /**
    * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects
@@ -93,6 +136,10 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /** Optional child-only system instruction. Requires {@link SubagentCapabilities.instruction}. */
+  readonly instruction?: string
+  /** Optional adapter-owned reasoning effort. Requires {@link SubagentCapabilities.reasoningEffort}. */
+  readonly reasoningEffort?: ReasoningEffortId
 }
 ```
 
@@ -632,6 +679,12 @@ getProvider(name: string): SubagentProvider | undefined
 list(): string[]
 
 /**
+ * Read a detached snapshot of the shared profile and direct-selection policy.
+ * @returns the current settings-backed value, or composition defaults without settings.
+ */
+modelSelection(): SubagentModelSelectionSettings
+
+/**
  * Establish a published child on the named provider. Capability and semantic
  * checks run before delegation. Provider ownership lasts until its promise
  * fulfills; a rejection therefore has no run for the caller to dispose and
@@ -646,7 +699,7 @@ async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>
 
 Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:171`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:193`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagent-events"></a>
 
@@ -672,7 +725,24 @@ A published child settled. Scope-filtered dispatch uses the same delegating pare
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:166`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:185`](../../packages/subagent/subagent/src/index.ts)
+
+<a id="subagentmodel-selection-updated--emit"></a>
+
+#### `subagent/model-selection-updated` — emit
+
+The shared model-profile settings changed. Delegation consumers re-register model-visible schemas from SubagentRuntime.modelSelection.
+
+```ts cordis-catalog
+/**
+ * The shared model-profile settings changed. Delegation consumers re-register
+ * model-visible schemas from {@link SubagentRuntime.modelSelection}.
+ * @mode emit
+ */
+'subagent/model-selection-updated'(): void
+```
+
+Source: [`packages/subagent/subagent/src/index.ts:165`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentprovider-added--emit"></a>
 
@@ -689,7 +759,7 @@ A provider became resolvable in the registry.
 'subagent/provider-added'(provider: SubagentProvider): void
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:140`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:153`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentprovider-removed--emit"></a>
 
@@ -706,7 +776,7 @@ A provider left the registry. Accepted runs remain holder-owned.
 'subagent/provider-removed'(name: string): void
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:146`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:159`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentstart--emit"></a>
 
@@ -730,5 +800,5 @@ A provider established a published child. For in-process providers, `ctx.agents.
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:157`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:176`](../../packages/subagent/subagent/src/index.ts)
 <!-- END GENERATED cordis-surface -->

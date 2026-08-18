@@ -33,7 +33,10 @@ sequenceDiagram
   Driver->>Session: <code>step/start</code>
   Driver->>Session: <code>user/message</code> per entered message
   Driver->>Prompt: <code>system-prompt/assemble</code> waterfall
-  Driver->>LLM: <code>agent/request</code> waterfall, then <code>llm/stream</code> waterfall
+  Driver->>Hooks: <code>agent/request</code> waterfall, prepare and freeze request
+  Driver->>Hooks: <code>agent/request-admission</code> waterfall
+  Hooks-->>Driver: accept, or rebuild after durable surface replacement
+  Driver->>LLM: <code>llm/stream</code> waterfall
   LLM-->>Driver: StreamChunk*
   Driver->>Session: <code>assistant/chunk</code>*
   Session-->>SDK: <code>session/event</code> <code>assistant/chunk</code>*
@@ -73,7 +76,7 @@ sequenceDiagram
 
 The `assistant/message` event records every successful provider call, including content-less and `max-tokens` finishes. Empty content stays out of derived history, while the durable event keeps usage and `sourceEventSeqs` listing the exact `assistant/chunk` events, including an explicit empty list.
 
-`dsh-compaction-basic` uses `agent/pre-step` for pressure before request derivation and `agent/request-error` only for canonical context overflow. Once either trigger qualifies, optional tool-result pruning runs before summary selection. Recovery works between the closed failed step and failed turn close, and opens a fresh retry turn only when pruning or summarization advances the surface replacement generation; otherwise the original request error remains authoritative.
+`dsh-compaction-basic` uses `agent/request-admission` for pressure after complete immutable request construction and before adapter dispatch, while `agent/request-error` handles canonical context overflow. Once either trigger qualifies, optional tool-result pruning runs before summary selection. Admission rebuilds the pending request only after pruning or summarization advances the surface replacement generation. Overflow recovery works between the closed failed step and failed turn close, and opens a fresh retry turn under the same progress rule; otherwise the original request error remains authoritative.
 
 The returned `agent/pre-step` decision is authoritative; listeners wrapping `next()` preserve downstream messages unless replacement is intentional. Steering and injected context pass through the same waterfall after a later claim operation takes their next-step batch.
 

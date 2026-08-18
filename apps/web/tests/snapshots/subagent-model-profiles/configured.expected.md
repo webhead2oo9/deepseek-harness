@@ -1,0 +1,39 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
+    - button "子代理":
+      - img
+      - text: 子代理
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - heading "子代理" [level=2]
+  - paragraph: 为委派任务创建可复用的模型与指令配置。模型建议来自已连接的适配器，也始终可以手动填写任意值。
+  - checkbox "允许直接选择模型 允许调用方不使用具名配置，直接选择任意提供商与模型。" [checked]
+  - strong: 允许直接选择模型
+  - text: 允许调用方不使用具名配置，直接选择任意提供商与模型。
+  - heading "配置" [level=3]
+  - button "添加配置"
+  - list:
+    - listitem:
+      - heading "deep" [level=4]
+      - paragraph: 复杂分析与审查
+      - code: runinfraprovider / reasoning-model · high
+      - paragraph:
+        - strong: 指令：
+        - text: 核对证据，并明确说明不确定性。
+      - button "编辑 deep": 编辑
+      - button "删除 deep": 删除

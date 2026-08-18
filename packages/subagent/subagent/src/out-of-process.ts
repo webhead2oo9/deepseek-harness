@@ -19,7 +19,7 @@ import type { SubagentCapabilities, SubagentResult, SubagentRun, SubagentStopRea
 /**
  * The capability advertisement of an out-of-process backend: NONE. A child in
  * another process cannot honor parent-enforced start features
- * (`outputSchema`/`maxDepth`/`toolFilter`/`persona`), so the service rejects a
+ * (`outputSchema`/`maxDepth`/`toolFilter`/`persona`/`instruction`), so the service rejects a
  * request needing any of them before `start` runs — never accepted-then-ignored.
  */
 export const NO_START_CAPABILITIES: SubagentCapabilities = Object.freeze({
@@ -27,6 +27,9 @@ export const NO_START_CAPABILITIES: SubagentCapabilities = Object.freeze({
   depthLimit: false,
   toolFilter: false,
   persona: false,
+  instruction: false,
+  reasoningEffort: false,
+  modelRoute: false,
 })
 
 /**

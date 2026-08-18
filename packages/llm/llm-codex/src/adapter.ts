@@ -3,6 +3,8 @@
 import {
   attributionHeaders,
   contentHasImage,
+  CONTEXT_WINDOW_EXCEEDED_CODE,
+  isContextWindowExceededError,
   LlmAdapter,
   LlmError,
   ProviderRequestId,
@@ -42,6 +44,8 @@ export interface CodexConnectionOptions {
   clientVersion: string
   /** Fallback context capacity when the catalog omits one. */
   defaultContextWindow: number
+  /** Optional active context override, clamped to catalog maximum metadata when present. */
+  modelContextWindow?: number
   /** Maximum provider idle interval for a stream read. */
   streamIdleTimeoutMs: number
   /** Duration for retaining a successful model catalog response. */
@@ -106,10 +110,27 @@ function parseCatalog(value: unknown): CodexCatalogModel[] {
       ...typeof entry.context_window === 'number' && Number.isSafeInteger(entry.context_window) && entry.context_window > 0
         ? { context_window: entry.context_window }
         : {},
+      ...typeof entry.max_context_window === 'number'
+        && Number.isSafeInteger(entry.max_context_window)
+        && entry.max_context_window > 0
+        ? { max_context_window: entry.max_context_window }
+        : {},
       ...typeof entry.supported_in_api === 'boolean' ? { supported_in_api: entry.supported_in_api } : {},
       ...typeof entry.visibility === 'string' ? { visibility: entry.visibility } : {},
     }
   })
+}
+
+function activeContextWindow(
+  model: CodexCatalogModel | undefined,
+  connection: CodexConnectionOptions,
+): number {
+  const selected = connection.modelContextWindow
+    ?? model?.context_window
+    ?? connection.defaultContextWindow
+  return model?.max_context_window === undefined
+    ? selected
+    : Math.min(selected, model.max_context_window)
 }
 
 function modelInfo(provider: string, model: CodexCatalogModel): LlmModelInfo {
@@ -149,24 +170,29 @@ function requestId(headers: Headers): ProviderRequestId | undefined {
 async function providerFailure(response: Response): Promise<LlmError> {
   let message = `Codex API error (HTTP ${response.status})`
   let providerCode: string | undefined
+  let providerType: string | undefined
   try {
     const body = await response.json() as unknown
     if (isObject(body) && isObject(body.error)) {
       if (typeof body.error.message === 'string') message = body.error.message
       if (typeof body.error.code === 'string') providerCode = body.error.code
+      if (typeof body.error.type === 'string') providerType = body.error.type
     }
   } catch {
     // The HTTP status remains authoritative when an intermediary returns malformed JSON.
   }
-  const code = response.status === 401 || response.status === 403
-    ? 'AUTH'
-    : response.status === 429
-      ? 'RATE_LIMIT'
-      : response.status === 400
-        ? 'INVALID_REQUEST'
-        : response.status >= 500
-          ? 'SERVER'
-          : providerCode ?? `HTTP_${response.status}`
+  const detail = [providerCode, providerType, message].filter(value => value !== undefined).join(' ')
+  const code = isContextWindowExceededError(detail)
+    ? CONTEXT_WINDOW_EXCEEDED_CODE
+    : response.status === 401 || response.status === 403
+      ? 'AUTH'
+      : response.status === 429
+        ? 'RATE_LIMIT'
+        : response.status === 400
+          ? 'INVALID_REQUEST'
+          : response.status >= 500
+            ? 'SERVER'
+            : providerCode ?? `HTTP_${response.status}`
   const delay = retryAfterMs(response.headers.get('retry-after'))
   const id = requestId(response.headers)
   return new LlmError(message, code, {
@@ -212,6 +238,7 @@ export class CodexAdapter extends LlmAdapter {
       if (signal?.aborted) throw error
       if (!(error instanceof LlmError) || !['MISSING_CREDENTIAL', 'AUTH'].includes(error.code)) throw error
     }
+    const connection = this.config.options()
     const efforts = configured?.supported_reasoning_levels?.map(level => ({
       id: ReasoningEffortId(level.effort),
       name: level.effort.charAt(0).toUpperCase() + level.effort.slice(1),
@@ -221,7 +248,7 @@ export class CodexAdapter extends LlmAdapter {
       ...(configured === undefined
         ? { provider, id: model, name: model, inputModalities: ['text' as const, 'image' as const] }
         : modelInfo(provider, configured)),
-      context: { contextWindow: configured?.context_window ?? this.config.options().defaultContextWindow },
+      context: { contextWindow: activeContextWindow(configured, connection) },
       ...efforts === undefined || efforts.length === 0
         ? {}
         : {

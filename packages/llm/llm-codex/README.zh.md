@@ -17,9 +17,9 @@ Harness LLM（大语言模型）seam 的原生 OpenAI Codex 提供方。本包�
   name: '@deepseek-ai/dsh-llm-codex'
 ```
 
-`baseURL`、OAuth issuer 与客户端身份、回调端口、workspace allowlist、登录与刷新计时器、模型目录 cache 时长、回退上下文窗口、流 idle timeout 和重试策略都是显式 Cordis 插件配置字段。默认值指向 OpenAI 的公共 ChatGPT Codex 服务。`clientVersion` 默认使用适配器的 Codex 协议兼容版本，因为后端会用它筛选模型目录；仅当后端要求其他版本时才覆盖该值。除 loopback 测试服务器外，非 HTTPS 端点会被拒绝。
+`baseURL`、OAuth issuer 与客户端身份、回调端口、workspace allowlist、登录与刷新计时器、模型目录 cache 时长、回退与活动上下文窗口、流 idle timeout 和重试策略都是显式 Cordis 插件配置字段。默认值指向 OpenAI 的公共 ChatGPT Codex 服务。`clientVersion` 默认使用适配器的 Codex 协议兼容版本，因为后端会用它筛选模型目录；仅当后端要求其他版本时才覆盖该值。`modelContextWindow` 用于选择非默认活动窗口；如果模型发现返回 `max_context_window`，适配器会将选中的覆盖值、目录默认值或回退值限制到该模型上限。省略该字段会保留目录中经过调优的默认值，压缩阈值仍由 `dsh-compaction-basic` 策略拥有。除 loopback 测试服务器外，非 HTTPS 端点会被拒绝。
 
-适配器从 `/models` 获取已认证的模型目录，并且只公开标记为列出且受 Responses API 支持的模型。每个公开模型都接受文本和图像输入。适配器从附件服务读取持久图像，并在用户消息或工具结果中将其作为 base64 data URL `input_image` 项发送。它向 `/responses` 发送原生流式请求，并在 401 后刷新一次，再返回认证失败。终止 Responses 事件会结算该流，不要求尾随 `[DONE]`；若传输结束或 `[DONE]` 出现在终止事件之前，则以 `STREAM_CLOSED` 失败。成功响应会把提供方原生输出项保留为回放状态，因此加密推理和工具调用身份可在后续轮次中原样返回。temperature、stop sequence 和显式 `maxTokens` 会被拒绝，因为该路由没有把它们映射到 Codex 后端。
+适配器从 `/models` 获取已认证的模型目录，并且只公开标记为列出且受 Responses API 支持的模型。每个公开模型都接受文本和图像输入。适配器从附件服务读取持久图像，并在用户消息或工具结果中将其作为 base64 data URL `input_image` 项发送。它向 `/responses` 发送原生流式请求，并在 401 后刷新一次，再返回认证失败。终止 Responses 事件会结算该流，不要求尾随 `[DONE]`；若传输结束或 `[DONE]` 出现在终止事件之前，则以 `STREAM_CLOSED` 失败。成功响应会把提供方原生输出项保留为回放状态，因此加密推理和工具调用身份可在后续轮次中原样返回。HTTP 与流式上下文窗口失败会规范化为 `CONTEXT_WINDOW_EXCEEDED`，使已配置的压缩后端能够修复并重试。temperature、stop sequence 和显式 `maxTokens` 会被拒绝，因为该路由没有把它们映射到 Codex 后端。
 
 ## 模型体验
 

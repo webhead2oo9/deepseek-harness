@@ -110,7 +110,7 @@ describe('CompactionEngine seam', () => {
     const ctx = new Context()
     const svc = new StubCompactionEngine(ctx)
     const session = Session.create(SessionId('s'))
-    expect(await svc.compactIfNeeded(stubAgent(session), 'pressure', new AbortController().signal)).toBeNull()
+    expect(await svc.compactIfNeeded(stubAgent(session), { kind: 'context-overflow' }, new AbortController().signal)).toBeNull()
     const signal = new AbortController().signal
     expect(await svc.compactNow({
       ...stubAgent(session),
@@ -164,7 +164,7 @@ describe('CompactionEngine seam', () => {
     await svc.compactRegion(original.seq, original.seq, stubAgent(session, 'm'), controller.signal)
     expect(svc.lastSignal).toBe(controller.signal)
 
-    await svc.compactIfNeeded(stubAgent(session), 'context-overflow', controller.signal)
+    await svc.compactIfNeeded(stubAgent(session), { kind: 'context-overflow' }, controller.signal)
     expect(svc.lastSignal).toBe(controller.signal)
   })
 })

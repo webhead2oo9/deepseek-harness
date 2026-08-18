@@ -11,7 +11,7 @@
 
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
 import type { SubagentDescriptorData } from './descriptor.ts'
@@ -80,14 +80,21 @@ export interface SubagentRunEndInfo {
  * {@link SubagentProvider.start} path, where the provider composes the child;
  * continuable children are composed by the continuation manager itself and are
  * gated by {@link SubagentProvider.prepareContinuable} instead. Each flag
- * corresponds one-to-one to a {@link SubagentStartRequest} option: `depthLimit`
- * to `maxDepth`; the other names match.
+ * corresponds to a {@link SubagentStartRequest} option: `depthLimit` to
+ * `maxDepth`, `modelRoute` to provider/model fields in `agentOptions`, and the
+ * other names match.
  */
 export interface SubagentCapabilities {
   readonly outputSchema: boolean
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  /** Whether one-shot children install a requested child-only system instruction. */
+  readonly instruction: boolean
+  /** Whether one-shot children apply a requested reasoning effort to model calls. */
+  readonly reasoningEffort: boolean
+  /** Whether one-shot children honor requested `agentOptions.provider` and `agentOptions.model` routes. */
+  readonly modelRoute: boolean
 }
 
 /**
@@ -116,6 +123,10 @@ export interface SubagentStartRequest {
    * remaining turn work when it fires afterward.
    */
   readonly signal: AbortSignal
+  /**
+   * Child Agent options. Explicit provider/model fields require
+   * {@link SubagentCapabilities.modelRoute}; other fields remain provider-specific.
+   */
   readonly agentOptions?: AgentOptions
   /**
    * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects
@@ -146,6 +157,10 @@ export interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /** Optional child-only system instruction. Requires {@link SubagentCapabilities.instruction}. */
+  readonly instruction?: string
+  /** Optional adapter-owned reasoning effort. Requires {@link SubagentCapabilities.reasoningEffort}. */
+  readonly reasoningEffort?: ReasoningEffortId
 }
 
 /**

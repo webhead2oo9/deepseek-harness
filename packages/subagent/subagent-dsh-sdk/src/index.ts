@@ -1,7 +1,7 @@
 /**
  * Out-of-process SDK subagent backend. Each child is a complete DeepSeek
  * Harness runtime in its own process — own `cordis.yml`-decided composition,
- * session, model route, and tools — driven over stdio JSON-RPC through the
+ * session, request-overridable model route, and tools — driven over stdio JSON-RPC through the
  * TypeScript SDK client, so it shares no Cordis context and advertises no
  * parent-enforced start capabilities; the ONE thing it reads off
  * `request.parent` is the session's workspace cwd. This plugin uses named
@@ -86,12 +86,12 @@ export const Config: z<Config> = z.object({
 type ResolvedConfig = Required<Omit<Config, 'cwd' | 'maxTokens'>> & Pick<Config, 'cwd' | 'maxTokens'>
 
 /**
- * The SDK provider. Advertises NO start-time capabilities: an out-of-process
- * child cannot honor `outputSchema`/`maxDepth`/`toolFilter`/`persona` (the
- * service rejects a request needing any of them before `start` runs).
+ * The SDK provider. Advertises model-route selection but cannot honor
+ * `outputSchema`/`maxDepth`/`toolFilter`/`persona`/`instruction` (the service rejects a
+ * request needing any of them before `start` runs).
  */
 class SdkSubagentProvider implements SubagentProvider {
-  readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
+  readonly capabilities: SubagentCapabilities = { ...NO_START_CAPABILITIES, modelRoute: true }
   // Context contract: an out-of-process SDK child starts fresh — no parent conversation crosses the process boundary.
   readonly inheritsParentContext = false
 
@@ -102,8 +102,8 @@ class SdkSubagentProvider implements SubagentProvider {
       command: this.config.command,
       args: this.config.args,
       cwd: resolveChildCwd('subagent-dsh-sdk', this.config.cwd, request.parent.session.header.cwd),
-      provider: this.config.provider,
-      model: this.config.model,
+      provider: request.agentOptions?.provider ?? this.config.provider,
+      model: request.agentOptions?.model ?? this.config.model,
       ...this.config.maxTokens === undefined ? {} : { maxTokens: this.config.maxTokens },
       env: this.config.env,
       shutdownTimeoutMs: this.config.shutdownTimeoutMs,

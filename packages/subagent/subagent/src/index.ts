@@ -32,6 +32,8 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -67,10 +69,21 @@ import { listChildren as listSubagentChildren, listDescendants as listSubagentDe
 import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts'
 import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
+import {
+  snapshotSubagentModelSelectionSettings,
+  SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
+  validateSubagentModelSelectionSettings,
+} from './model-selection.ts'
+import type { SubagentModelSelectionSettings } from './model-selection.ts'
 
 export * from './out-of-process.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
 export { SubagentRunId } from './types.ts'
+export {
+  SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
+  validateSubagentModelSelectionSettings,
+} from './model-selection.ts'
+export type { SubagentModelProfile, SubagentModelSelectionSettings } from './model-selection.ts'
 export type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
@@ -145,6 +158,12 @@ declare module '@deepseek-ai/cordis' {
      */
     'subagent/provider-removed'(name: string): void
     /**
+     * The shared model-profile settings changed. Delegation consumers re-register
+     * model-visible schemas from {@link SubagentRuntime.modelSelection}.
+     * @mode emit
+     */
+    'subagent/model-selection-updated'(): void
+    /**
      * A provider established a published child. For in-process providers,
      * `ctx.agents.get(info.id)` resolves during this notification.
      * Scope-filtered dispatch keys the carrier by the delegating parent, so a
@@ -167,9 +186,24 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Composition defaults for shared subagent model selection. */
+export type Config = SubagentModelSelectionSettings
+
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends Service {
+  static Config: z<Config> = z.object({
+    allowDirectModelSelection: z.boolean().default(false),
+    profiles: z.dict(z.object({
+      description: z.string().required(),
+      provider: z.string().required(),
+      model: z.string().required(),
+      instruction: z.string(),
+      reasoningEffort: z.string(),
+    })).default({}),
+  })
+
   private providers = new Map<string, SubagentProvider>()
+  private modelSelectionSource: () => SubagentModelSelectionSettings
   private continuations: SubagentContinuationManager | undefined
   /** Deployment contributions composed into unpublished continuable children. */
   private readonly setupRegistry = new SubagentActivationSetupRegistry()
@@ -180,8 +214,21 @@ export class SubagentRuntime extends Service {
    */
   private readonly emitLifecycle: LifecycleEmitter
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'subagents')
+    validateSubagentModelSelectionSettings(config)
+    this.modelSelectionSource = () => config
+    installSettingsSection(
+      ctx,
+      SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
+      SubagentRuntime.Config,
+      config,
+      {
+        setSource: (current) => { this.modelSelectionSource = current },
+        onChange: () => { ctx.emit('subagent/model-selection-updated') },
+        validate: validateSubagentModelSelectionSettings,
+      },
+    )
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
@@ -402,6 +449,14 @@ export class SubagentRuntime extends Service {
   }
 
   /**
+   * Read a detached snapshot of the shared profile and direct-selection policy.
+   * @returns the current settings-backed value, or composition defaults without settings.
+   */
+  modelSelection(): SubagentModelSelectionSettings {
+    return snapshotSubagentModelSelectionSettings(this.modelSelectionSource())
+  }
+
+  /**
    * Establish a published child on the named provider. Capability and semantic
    * checks run before delegation. Provider ownership lasts until its promise
    * fulfills; a rejection therefore has no run for the caller to dispose and
@@ -484,6 +539,12 @@ export class SubagentRuntime extends Service {
       { when: request.maxDepth !== undefined, cap: 'depthLimit' },
       { when: request.toolFilter !== undefined, cap: 'toolFilter' },
       { when: request.persona !== undefined, cap: 'persona' },
+      { when: request.instruction !== undefined, cap: 'instruction' },
+      { when: request.reasoningEffort !== undefined, cap: 'reasoningEffort' },
+      {
+        when: request.agentOptions?.provider !== undefined || request.agentOptions?.model !== undefined,
+        cap: 'modelRoute',
+      },
     ]
     for (const { when, cap } of needs) {
       if (when && !provider.capabilities[cap]) {

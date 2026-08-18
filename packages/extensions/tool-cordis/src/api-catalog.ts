@@ -482,7 +482,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrigger, signal: AbortSignal, ): Promise<CompactionResult | null>',
-        description: 'Consider automatic compaction for one explicit trigger. Pressure policy uses the latest durable routed request, while context-overflow policy may force a useful balanced reduction even below the normal threshold. Return `null` when no safe range can be compacted. A single oversized retained unit or request envelope cannot be repaired through surface compaction.',
+        description: 'Consider automatic compaction for one explicit trigger. Pressure carries the complete imminent header and active route capacity; context overflow may force a useful balanced reduction even below the normal threshold. Return `null` when no safe range can be compacted. A single oversized retained unit or request envelope cannot be repaired through surface compaction.',
         parameters: [{ name: 'agent', description: 'agent context owning the session surface and routing options.' }, { name: 'trigger', description: 'normal pressure or provider-confirmed context overflow.' }, { name: 'signal', description: 'cancellation signal; model-backed implementations must forward it.' }],
         returns: 'the compaction result, or `null` if no compaction was needed.',
       },
@@ -1750,6 +1750,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the registered names.',
       },
       {
+        signature: 'modelSelection(): SubagentModelSelectionSettings',
+        description: 'Read a detached snapshot of the shared profile and direct-selection policy.',
+        parameters: [],
+        returns: 'the current settings-backed value, or composition defaults without settings.',
+      },
+      {
         signature: 'async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>',
         description: 'Establish a published child on the named provider. Capability and semantic checks run before delegation. Provider ownership lasts until its promise fulfills; a rejection therefore has no run for the caller to dispose and emits no run lifecycle events. Post-publication turn and infrastructure failures settle through the returned run.',
         parameters: [{ name: 'name', description: 'the provider to use.' }, { name: 'request', description: 'child label, prompt, parent, signal, and optional capabilities.' }],
@@ -2327,6 +2333,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
+    name: 'agent/request-admission',
+    mode: 'waterfall',
+    signature: '\'agent/request-admission\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; request: GenerateOptions; contextWindow: number | undefined; rebuild: number; signal: AbortSignal }, next: () => Promise<RequestAdmissionAction>): Promise<RequestAdmissionAction>',
+    summary: 'Admit one immutable, reconstructable model request immediately before adapter dispatch.',
+    description: 'Admit one immutable, reconstructable model request immediately before adapter dispatch. A listener that durably changes model-visible state returns `{ kind: \'rebuild\' }` without calling `next()`; the loop then reconstructs messages from the durable surface and runs admission again with the same prepared header and adapter registration. Calling `next()` admits the current request unless a later listener rebuilds it. Rebuilds require durable surface progress and are bounded per request, so every listener must converge or let the turn fail before adapter dispatch.',
+    parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
     name: 'agent/request-error',
     mode: 'waterfall',
     signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
@@ -2565,6 +2579,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A published child settled.',
     description: 'A published child settled. Scope-filtered dispatch uses the same delegating parent carrier as `subagent/start`, so the lifecycle pair reaches the same scoped audience.',
     parameters: [{ name: 'info', description: 'the run identity and terminal outcome.' }],
+  },
+  {
+    name: 'subagent/model-selection-updated',
+    mode: 'emit',
+    signature: '\'subagent/model-selection-updated\'(): void',
+    summary: 'The shared model-profile settings changed.',
+    description: 'The shared model-profile settings changed. Delegation consumers re-register model-visible schemas from SubagentRuntime.modelSelection.',
+    parameters: [],
   },
   {
     name: 'subagent/provider-added',
@@ -2916,7 +2938,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CompactionTrigger',
-    declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
+    declaration: 'export type CompactionTrigger = {\n    kind: \'pressure\';\n    requestHeader: EpochHeader;\n    contextWindow?: number;\n} | {\n    kind: \'context-overflow\';\n};',
   },
   {
     name: 'ConfinedArgv',
@@ -2964,7 +2986,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableSubagentDescriptorData',
-    declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
+    declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly instruction?: string;\n    readonly reasoningEffort?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
     name: 'CordisDynamicPackageId',
@@ -3735,6 +3757,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
   {
+    name: 'RequestAdmissionAction',
+    declaration: 'export type RequestAdmissionAction = {\n    kind: \'rebuild\';\n} | undefined;',
+  },
+  {
     name: 'RequestContext',
     declaration: 'export interface RequestContext {\n    provider: string;\n    model: string;\n    contextWindow?: number;\n}',
   },
@@ -4252,7 +4278,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentCapabilities',
-    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
+    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n    readonly instruction: boolean;\n    readonly reasoningEffort: boolean;\n    readonly modelRoute: boolean;\n}',
   },
   {
     name: 'SubagentDescendantListEntry',
@@ -4269,6 +4295,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentInterruptAuthority',
     declaration: 'export type SubagentInterruptAuthority = {\n    readonly kind: \'user\';\n    readonly parentSessionId: SessionId;\n} | {\n    readonly kind: \'ancestor\';\n    readonly agent: Agent;\n};',
+  },
+  {
+    name: 'SubagentModelProfile',
+    declaration: 'export interface SubagentModelProfile {\n    readonly description: string;\n    readonly provider: string;\n    readonly model: string;\n    readonly instruction?: string;\n    readonly reasoningEffort?: string;\n}',
+  },
+  {
+    name: 'SubagentModelSelectionSettings',
+    declaration: 'export interface SubagentModelSelectionSettings {\n    readonly allowDirectModelSelection: boolean;\n    readonly profiles: Readonly<Record<string, SubagentModelProfile>>;\n}',
   },
   {
     name: 'SubagentProvider',
@@ -4304,11 +4338,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+    declaration: 'export class SubagentRuntime extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    modelSelection(): SubagentModelSelectionSettings;\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
   },
   {
     name: 'SubagentStartRequest',
-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
+    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n    readonly instruction?: string;\n    readonly reasoningEffort?: ReasoningEffortId;\n}',
   },
   {
     name: 'SubagentStopReason',

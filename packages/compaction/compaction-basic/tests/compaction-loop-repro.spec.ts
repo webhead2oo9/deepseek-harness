@@ -37,6 +37,7 @@ class ReproCompactionEngine extends BasicCompactionEngine {
 /** Each call emits one tool-call until exhausted, then a final text answer. */
 class StepwiseToolAdapter extends LlmAdapter {
   calls = 0
+  readonly requests: GenerateOptions[] = []
   constructor(private toolSteps: number) {
     super()
   }
@@ -50,7 +51,8 @@ class StepwiseToolAdapter extends LlmAdapter {
     })
   }
 
-  async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+  async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
     const n = this.calls
     this.calls += 1
     if (n < this.toolSteps) {
@@ -91,7 +93,7 @@ class OverflowRecoveryAdapter extends LlmAdapter {
       provider,
       id: model,
       name: model,
-      context: { contextWindow: 128 },
+      context: { contextWindow: 100_000 },
     })
   }
 
@@ -146,13 +148,18 @@ async function mountInvariants(ctx: Context): Promise<void> {
   await ctx.plugin(AgentLoopInvariant)
 }
 
-async function harness(toolSteps: number): Promise<{ ctx: Context; compact: ReproCompactionEngine }> {
+async function harness(toolSteps: number): Promise<{
+  ctx: Context
+  compact: ReproCompactionEngine
+  adapter: StepwiseToolAdapter
+}> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   await mountInvariants(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(TokenMeter)
-  ctx.llm.registerAdapter(['mock'], new StepwiseToolAdapter(toolSteps))
+  const adapter = new StepwiseToolAdapter(toolSteps)
+  ctx.llm.registerAdapter(['mock'], adapter)
   ctx.tools.register(defineContentToolFixture({
     name: 'work',
     description: 'does work',
@@ -170,7 +177,7 @@ async function harness(toolSteps: number): Promise<{ ctx: Context; compact: Repr
     maxTokens: 8192,
     compactionRetries: 1,
   })
-  return { ctx, compact }
+  return { ctx, compact, adapter }
 }
 
 function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
@@ -182,6 +189,28 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
       }
     })
   })
+}
+
+function admissionHistorySeed(): SessionEvent[] {
+  const session = Session.create(SessionId('admission-history-seed'))
+  session.append('turn/start', { turn: 1 })
+  session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: `OLD ADMISSION SENTINEL ${'old '.repeat(300)}` }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  session.append('step/start', { turn: 1, step: 1 })
+  session.append('assistant/message', {
+    turn: 1,
+    step: 1,
+    message: createMessage({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'old answer' }],
+      source: { kind: 'model', provider: 'mock', model: 'mock' },
+    }),
+  }, { surfaceOp: 'append' })
+  session.append('step/end', { turn: 1, step: 1 })
+  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  return [...session.events]
 }
 
 function overflowHistorySeed(): SessionEvent[] {
@@ -215,7 +244,35 @@ function overflowHistorySeed(): SessionEvent[] {
 }
 
 describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', () => {
-  it('uses the model actually routed by agent/request for post-step pressure', async () => {
+  it('compacts an incoming-message threshold jump before the first model dispatch', async () => {
+    const { ctx, adapter } = await harness(0)
+    try {
+      const { agent } = await ctx.agentLoop.createAgent(ctx, {
+        sessionId: SessionId('admission-threshold-jump'),
+        seed: admissionHistorySeed(),
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: `NEW ADMISSION INPUT ${'new '.repeat(800)}` }],
+        source: { kind: 'user' },
+      }))
+      await agent.whenIdle()
+
+      expect(agent.session.events.some(event => event.type === 'compaction/summary')).toBe(true)
+      expect(adapter.requests).toHaveLength(1)
+      const dispatched = adapter.requests[0]!.messages
+        .flatMap(message => message.content)
+        .map(block => block.type === 'text' ? block.text : '')
+        .join('\n')
+      expect(dispatched).not.toContain('OLD ADMISSION SENTINEL')
+      expect(dispatched).toContain('CHECKPOINT SUMMARY')
+      expect(dispatched).toContain('NEW ADMISSION INPUT')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('uses the model actually routed by agent/request for request pressure', async () => {
     const { ctx } = await harness(8)
     ctx.on('agent/request', async (_payload, next) => ({
       ...await next(), provider: 'mock', model: 'mock',
@@ -239,7 +296,7 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
     }
   })
 
-  it('runs automatic pressure between the completed tool step and the next step', async () => {
+  it('runs automatic pressure after the next step is complete and before its model dispatch', async () => {
     const { ctx } = await harness(8)
     try {
       const agent = ctx.agentLoop.create(SessionId('post-step-order'), { provider: 'mock', model: 'mock' })
@@ -260,12 +317,16 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
       )
       const nextStepStart = events.find(event =>
         event.type === 'step/start'
-        && event.data.step === precedingResult.data.step + 1
-        && event.seq > compactStart!.seq,
+        && event.data.step === precedingResult.data.step + 1,
       )
-      expect(precedingResult.seq).toBeLessThan(compactStart!.seq)
-      expect(precedingStepEnd!.seq).toBeLessThan(compactStart!.seq)
-      expect(compactStart!.seq).toBeLessThan(nextStepStart!.seq)
+      const nextAssistant = events.find(event =>
+        event.type === 'assistant/message'
+        && event.data.step === precedingResult.data.step + 1,
+      )
+      expect(precedingResult.seq).toBeLessThan(nextStepStart!.seq)
+      expect(precedingStepEnd!.seq).toBeLessThan(nextStepStart!.seq)
+      expect(nextStepStart!.seq).toBeLessThan(compactStart!.seq)
+      expect(compactStart!.seq).toBeLessThan(nextAssistant!.seq)
     } finally {
       await ctx.fiber.dispose()
     }

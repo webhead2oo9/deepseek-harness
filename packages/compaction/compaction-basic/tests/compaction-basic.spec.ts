@@ -280,8 +280,18 @@ async function compactIfNeeded(
   session: Session,
   trigger: 'pressure' | 'context-overflow' = 'pressure',
   model: string | undefined = MODEL,
+  contextWindow = 1_000,
 ): Promise<CompactionResult | null> {
-  return compact.compactIfNeeded(agent(session, model), trigger, SIGNAL)
+  if (trigger === 'context-overflow') {
+    return compact.compactIfNeeded(agent(session, model), { kind: trigger }, SIGNAL)
+  }
+  const requestHeader = session.requestHeader()
+  if (requestHeader === undefined) throw new Error('pressure fixture has no request header')
+  return compact.compactIfNeeded(
+    agent(session, model),
+    { kind: trigger, requestHeader, contextWindow },
+    SIGNAL,
+  )
 }
 
 describe('compact configuration and defaults', () => {
@@ -483,16 +493,16 @@ describe('pressure measurement and retention', () => {
     retainTokens: 180,
   }
 
-  it('skips when no durable routed model exists instead of using AgentOptions fallback', async () => {
+  it('skips context-overflow recovery when no durable routed model exists', async () => {
     const compact = service(compactConfig)
     const session = Session.create(SessionId('headerless'))
     session.append('turn/start', { turn: 1 })
-    await expect(compact.compactIfNeeded(agent(session, MODEL), 'pressure', SIGNAL))
+    await expect(compact.compactIfNeeded(agent(session, MODEL), { kind: 'context-overflow' }, SIGNAL))
       .resolves.toBeNull()
     expect(compact.calls).toHaveLength(0)
   })
 
-  it('meters an unlisted model when its provider adapter supplies context metadata', async () => {
+  it('meters an unlisted model with the admitted route capacity', async () => {
     const compact = service(compactConfig)
     const session = conversation()
     session.append('request/header', {
@@ -503,19 +513,17 @@ describe('pressure measurement and retention', () => {
       .resolves.not.toBeNull()
   })
 
-  it('forwards turn cancellation to proactive model metadata resolution', async () => {
+  it('uses the admitted capacity without resolving model metadata again', async () => {
     const ctx = createContext()
     const resolveModelInfo = vi.spyOn(ctx.llm, 'resolveModelInfo')
     const compact = service(compactConfig, ctx)
     const session = conversation()
-    const signal = new AbortController().signal
 
-    await expect(compact.compactIfNeeded(agent(session, MODEL), 'pressure', signal))
-      .resolves.not.toBeNull()
-    expect(resolveModelInfo).toHaveBeenCalledWith(MODEL, MODEL, signal)
+    await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
+    expect(resolveModelInfo).not.toHaveBeenCalled()
   })
 
-  it('re-resolves capacity after a same-model-id provider switch in one session', async () => {
+  it('uses the admitted capacity after a same-model-id provider switch', async () => {
     const ctx = new Context()
     void new LlmRuntime(ctx)
     void new TokenMeter(ctx)
@@ -533,7 +541,7 @@ describe('pressure measurement and retention', () => {
       header: { config: { provider: 'large', model: 'shared-id' } },
       reason: 'resume',
     })
-    await expect(compactIfNeeded(compact, session)).resolves.toBeNull()
+    await expect(compactIfNeeded(compact, session, 'pressure', MODEL, 10_000)).resolves.toBeNull()
 
     session.append('request/header', {
       header: { config: { provider: 'small', model: 'shared-id' } },
@@ -559,8 +567,12 @@ describe('pressure measurement and retention', () => {
       reason: 'resume',
     })
 
-    await expect(compactIfNeeded(compact, session, 'pressure'))
-      .rejects.toThrow(/no context capacity for unknown-context\/model/)
+    const requestHeader = session.requestHeader()!
+    await expect(compact.compactIfNeeded(
+      agent(session, MODEL),
+      { kind: 'pressure', requestHeader },
+      SIGNAL,
+    )).rejects.toThrow(/no context capacity for unknown-context\/model/)
     await expect(compactIfNeeded(compact, session, 'context-overflow'))
       .resolves.not.toBeNull()
   })
@@ -653,7 +665,7 @@ describe('pressure measurement and retention', () => {
     const result = await compactIfNeeded(compact, session, 'pressure', 'fallback')
     expect(result).not.toBeNull()
     expect(session.requestHeader()?.config.model).toBe('actual')
-    expect(measure.mock.calls[0]).toEqual([session])
+    expect(measure.mock.calls[0]).toEqual([session, session.requestHeader()])
   })
 
   it('declines when envelope pressure is high but the surface has no compactable range', async () => {
@@ -708,7 +720,7 @@ describe('pressure measurement and retention', () => {
       retainTokens: 80,
     }, createContext(4_000))
     const session = toolConversation()
-    const result = await compactIfNeeded(compact, session)
+    const result = await compactIfNeeded(compact, session, 'pressure', MODEL, 4_000)
     expect(result).not.toBeNull()
 
     const messages = session.deriveMessages()
@@ -813,7 +825,7 @@ describe('optional model-free tool-result pruning', () => {
     })
     const session = toolConversation()
 
-    expect(await compactIfNeeded(compact, session)).not.toBeNull()
+    expect(await compactIfNeeded(compact, session, 'pressure', MODEL, 2_000)).not.toBeNull()
     expect(compact.calls).toHaveLength(1)
     expect(summarizedText(compact.calls[0]!.input)).toContain('tool result middle pruned')
     expect(summarizedText(compact.calls[0]!.input)).not.toContain('result 1 '.repeat(300))
@@ -828,7 +840,7 @@ describe('optional model-free tool-result pruning', () => {
     })
     const session = oversizedToolResult(3_000, true)
 
-    expect(await compactIfNeeded(compact, session)).not.toBeNull()
+    expect(await compactIfNeeded(compact, session, 'pressure', MODEL, 2_000)).not.toBeNull()
     expect(compact.calls).toHaveLength(1)
     const original = session.events.find(event => event.type === 'tool/result')
     expect(original?.type === 'tool/result' && original.data.message.content[0].content[0])
@@ -1435,10 +1447,24 @@ describe('default one-shot summarizer', () => {
 })
 
 describe('automatic listener and loader composition', () => {
-  function preStep(ctx: Context, owner: Agent, signal = SIGNAL) {
+  function admit(
+    ctx: Context,
+    owner: Agent,
+    signal = SIGNAL,
+    rebuild = 0,
+    contextWindow: number | null = 1_000,
+  ) {
+    const header = owner.session.requestHeader()!
     return agentEvents(ctx, owner).waterfall(
-      'agent/pre-step', { messages: [], turn: 1, step: 1, signal },
-      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+      'agent/request-admission', {
+        request: { ...header.config, messages: owner.session.deriveMessages(), signal },
+        contextWindow: contextWindow ?? undefined,
+        rebuild,
+        turn: 1,
+        step: 1,
+        signal,
+      },
+      () => Promise.resolve(undefined),
     )
   }
 
@@ -1469,16 +1495,16 @@ describe('automatic listener and loader composition', () => {
       retainTokens: 180,
     })
     const pressured = conversation(4)
-    await preStep(ctx, agent(pressured, 'unconfigured-agent-fallback'))
+    await admit(ctx, agent(pressured, 'unconfigured-agent-fallback'))
     expect(pressured.events.some(event => event.type === 'compaction/summary')).toBe(true)
 
     const small = conversation(1)
-    await preStep(ctx, agent(small, MODEL))
+    await admit(ctx, agent(small, MODEL))
     expect(small.events.some(event => event.type === 'compaction/start')).toBe(false)
     expect(compact.calls).toHaveLength(1)
   })
 
-  it('skips pre-step pressure when the step signal is already aborted', async () => {
+  it('skips request-admission pressure when the step signal is already aborted', async () => {
     const ctx = createContext()
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 0.5,
@@ -1487,11 +1513,63 @@ describe('automatic listener and loader composition', () => {
     const pressured = conversation(4)
     const compactIfNeeded = vi.spyOn(compact, 'compactIfNeeded')
 
-    await expect(preStep(ctx, agent(pressured, MODEL), AbortSignal.abort('step aborted')))
-      .resolves.toEqual({ kind: 'enter', messages: [] })
+    await expect(admit(ctx, agent(pressured, MODEL), AbortSignal.abort('step aborted')))
+      .resolves.toBeUndefined()
 
     expect(compactIfNeeded).not.toHaveBeenCalled()
     expect(pressured.events.some(event => event.type === 'compaction/start')).toBe(false)
+  })
+
+  it('rechecks pressure after another admission listener rebuilds in either order', async () => {
+    async function calls(externalFirst: boolean): Promise<number> {
+      const ctx = createContext()
+      const session = conversation(1)
+      const owner = agent(session, MODEL)
+      const external = () => ctx.on('agent/request-admission', async ({ rebuild }, next) => {
+        if (rebuild > 0) return next()
+        const original = session.surface.nodes[0]!
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'external replacement' }],
+          source: { kind: 'plugin', plugin: 'external-admission-test' },
+        }), {
+          surfaceOp: { op: 'replace', start: original, end: original },
+          sourceEventSeqs: [original],
+        })
+        return { kind: 'rebuild' as const }
+      })
+      if (externalFirst) external()
+      const compact = new TestCompactionEngine(ctx)
+      const compactIfNeeded = vi.spyOn(compact, 'compactIfNeeded').mockResolvedValue(null)
+      if (!externalFirst) external()
+
+      await expect(admit(ctx, owner)).resolves.toEqual({ kind: 'rebuild' })
+      await expect(admit(ctx, owner, SIGNAL, 1)).resolves.toBeUndefined()
+      return compactIfNeeded.mock.calls.length
+    }
+
+    expect([await calls(true), await calls(false)].sort()).toEqual([1, 2])
+  })
+
+  it('skips only the immediate pass produced by its own replacement', async () => {
+    const ctx = createContext()
+    const compact = new TestCompactionEngine(ctx)
+    const session = conversation(1)
+    const owner = agent(session, MODEL)
+    const compactIfNeeded = vi.spyOn(compact, 'compactIfNeeded').mockImplementation(async () => {
+      const original = session.surface.nodes[0]!
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'compaction replacement' }],
+        source: { kind: 'plugin', plugin: 'compaction-admission-test' },
+      }), {
+        surfaceOp: { op: 'replace', start: original, end: original },
+        sourceEventSeqs: [original],
+      })
+      return null
+    })
+
+    await expect(admit(ctx, owner)).resolves.toEqual({ kind: 'rebuild' })
+    await expect(admit(ctx, owner, SIGNAL, 1)).resolves.toBeUndefined()
+    expect(compactIfNeeded).toHaveBeenCalledOnce()
   })
 
   it('warns and continues after operational failures, including non-Errors', async () => {
@@ -1505,7 +1583,7 @@ describe('automatic listener and loader composition', () => {
     compact.error = 'temporary failure'
     const session = conversation(4)
 
-    await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
+    await expect(admit(ctx, agent(session, MODEL))).resolves.toBeUndefined()
     expect(warnings).toContainEqual(expect.stringContaining('temporary failure'))
     expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
   })
@@ -1525,8 +1603,8 @@ describe('automatic listener and loader composition', () => {
     })
     const session = conversation(4)
 
-    await preStep(ctx, agent(session, MODEL))
-    await preStep(ctx, agent(session, MODEL))
+    await admit(ctx, agent(session, MODEL), SIGNAL, 0, null)
+    await admit(ctx, agent(session, MODEL), SIGNAL, 0, null)
 
     expect(warnings).toEqual([
       expect.stringContaining(`no context capacity for ${MODEL}/${MODEL}`),
@@ -1543,8 +1621,8 @@ describe('automatic listener and loader composition', () => {
     })
     const session = conversation(4)
 
-    await preStep(ctx, agent(session, MODEL))
-    await preStep(ctx, agent(session, MODEL))
+    await admit(ctx, agent(session, MODEL))
+    await admit(ctx, agent(session, MODEL))
 
     expect(warnings).toEqual([
       expect.stringContaining('retainTokens (500) must be less than threshold tokens 500'),
@@ -1828,7 +1906,7 @@ describe('automatic listener and loader composition', () => {
       retainTokens: 180,
     })
     const session = conversation(4)
-    await preStep(ctx, agent(session, MODEL))
+    await admit(ctx, agent(session, MODEL))
     const summaries = session.events.filter(event => event.type === 'compaction/summary').length
     expect(summaries).toBe(1)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
@@ -1843,7 +1921,7 @@ describe('automatic listener and loader composition', () => {
       retainTokens: 180,
     })
     const session = conversation(4)
-    await preStep(ctx, agent(session, MODEL))
+    await admit(ctx, agent(session, MODEL))
     expect(session.events.some(event => event.type === 'compaction/start')).toBe(false)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
   })
@@ -1873,7 +1951,7 @@ describe('automatic listener and loader composition', () => {
     await fiber.dispose()
 
     const session = conversation(4)
-    await preStep(ctx, agent(session, MODEL))
+    await admit(ctx, agent(session, MODEL))
     expect(session.events.some(event => event.type === 'compaction/start')).toBe(false)
     expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
   })

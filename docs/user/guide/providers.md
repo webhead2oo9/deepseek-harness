@@ -85,6 +85,14 @@ Configured providers appear in the model picker. Selecting a model also makes it
 
 If a saved default names a provider that was deleted, the composer displays **Select model** and blocks input until another model is selected.
 
+## Configure subagent model profiles
+
+Open **Settings → Subagents** to create named provider/model profiles for delegated work. Each profile has a short name, a description that tells the parent agent when to use it, an exact provider/model route, and an optional multiline child system instruction applied whenever that profile is selected. The provider and model fields offer live catalog suggestions but also accept manual values such as private RunInfra routes.
+
+Named profiles become optional `profile` choices on compatible `subagent` and `subagent_fork` tools. Enable **Allow direct model selection** only when parent agents may choose arbitrary provider/model pairs; it is disabled by default. Fixed external subagent backends that own their model configuration do not expose either selector.
+
+Profile edits affect future delegations. Existing continuable subagents retain the provider/model route and child system instruction with which they were created, even if that profile is later changed or deleted.
+
 ## Troubleshooting
 
 - **`MISSING_CREDENTIAL`** — Store the provider key through the Models page or supply the referenced environment variable.

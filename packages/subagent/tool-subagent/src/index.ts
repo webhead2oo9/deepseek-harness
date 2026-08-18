@@ -12,10 +12,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { assertSubagentMaxDepth, settleRun } from '@deepseek-ai/dsh-subagent'
-import type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
+import type {
+  SubagentModelSelectionSettings,
+  SubagentProvider,
+  SubagentResult,
+  SubagentRun,
+} from '@deepseek-ai/dsh-subagent'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
@@ -245,6 +250,92 @@ interface DelegationRunSpec {
   readonly runInBackground: boolean
 }
 
+interface ModelRouteRequest {
+  readonly profile?: string
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoning_effort?: string
+}
+
+interface ResolvedProfileSelection {
+  readonly agentOptions: AgentOptions | undefined
+  readonly instruction: string | undefined
+  readonly reasoningEffort: ReturnType<typeof ReasoningEffortId> | undefined
+}
+
+/** Resolve one invocation's optional profile or direct route over configured child defaults. */
+function resolveProfileSelection(
+  request: ModelRouteRequest,
+  settings: SubagentModelSelectionSettings,
+  base: AgentOptions | undefined,
+  routeSupported: boolean,
+  instructionSupported: boolean,
+  reasoningEffortSupported: boolean,
+): ResolvedProfileSelection {
+  const hasProfile = request.profile !== undefined
+  const hasProvider = request.provider !== undefined
+  const hasModel = request.model !== undefined
+  const hasReasoningEffort = request.reasoning_effort !== undefined
+  if (!hasProfile && !hasProvider && !hasModel && !hasReasoningEffort) {
+    return { agentOptions: base, instruction: undefined, reasoningEffort: undefined }
+  }
+  if (!routeSupported) throw new Error('this subagent provider does not support model route selection')
+  if (hasProfile && (hasProvider || hasModel || hasReasoningEffort)) {
+    throw new Error('choose either a subagent model profile or a direct provider/model route, not both')
+  }
+  if (hasProfile) {
+    const profileName = request.profile
+    const profile = Object.hasOwn(settings.profiles, profileName) ? settings.profiles[profileName] : undefined
+    if (profile === undefined) throw new Error(`unknown subagent model profile "${profileName}"`)
+    if (profile.instruction !== undefined && !instructionSupported) {
+      throw new Error('this subagent provider does not support profile system instructions')
+    }
+    if (profile.reasoningEffort !== undefined && !reasoningEffortSupported) {
+      throw new Error('this subagent provider does not support profile reasoning effort')
+    }
+    return {
+      agentOptions: { ...base, provider: profile.provider, model: profile.model },
+      instruction: profile.instruction,
+      reasoningEffort: profile.reasoningEffort === undefined
+        ? undefined
+        : ReasoningEffortId(profile.reasoningEffort),
+    }
+  }
+  if (!settings.allowDirectModelSelection) {
+    throw new Error('direct subagent model selection is disabled; choose a configured profile')
+  }
+  if (!hasProvider || !hasModel) {
+    throw new Error('direct subagent model selection requires both provider and model')
+  }
+  const provider = (request.provider).trim()
+  const model = (request.model).trim()
+  if (provider.length === 0 || model.length === 0) {
+    throw new Error('direct subagent provider and model must be non-empty strings')
+  }
+  if (hasReasoningEffort && !reasoningEffortSupported) {
+    throw new Error('this subagent provider does not support direct reasoning effort')
+  }
+  const reasoningEffort = request.reasoning_effort?.trim()
+  if (reasoningEffort !== undefined && reasoningEffort.length === 0) {
+    throw new Error('direct subagent reasoning_effort must be a non-empty string when present')
+  }
+  return {
+    agentOptions: { ...base, provider, model },
+    instruction: undefined,
+    reasoningEffort: reasoningEffort === undefined ? undefined : ReasoningEffortId(reasoningEffort),
+  }
+}
+
+/** Describe configured profiles without exposing any additional deployment state. */
+function profileDescription(settings: SubagentModelSelectionSettings, names: readonly string[]): string {
+  const allowed = new Set(names)
+  const choices = Object.entries(settings.profiles)
+    .filter(([name]) => allowed.has(name))
+    .map(([name, profile]) => `${name}: ${profile.description}`)
+    .join('; ')
+  return `Named child model profile. Available profiles: ${choices}`
+}
+
 /** Resolve the model's optional scheduling request into one execution route. */
 function resolveDelegationRun(
   request: DelegationRunRequest,
@@ -290,7 +381,24 @@ export function apply(ctx: Context, config: Config): void {
         + 'set maxDepth: \'provider-managed\' to leave the recursion budget to the provider',
       )
     }
+    if (
+      (config.agentOptions?.provider !== undefined || config.agentOptions?.model !== undefined)
+      && !provider.capabilities.modelRoute
+    ) {
+      throw new Error(
+        `tool-subagent: provider "${provider.name}" cannot honor configured agentOptions provider/model routes`,
+      )
+    }
     const wording = providerWording(provider.inheritsParentContext)
+    const modelSelection = ctx.subagents.modelSelection()
+    const routeSelectionSupported = provider.capabilities.modelRoute
+    const instructionSupported = provider.capabilities.instruction
+    const reasoningEffortSupported = provider.capabilities.reasoningEffort
+    const profileNames = Object.entries(modelSelection.profiles)
+      .filter(([, profile]) =>
+        (profile.instruction === undefined || instructionSupported)
+        && (profile.reasoningEffort === undefined || reasoningEffortSupported))
+      .map(([name]) => name)
     if (continuable && provider.prepareContinuable === undefined) {
       throw new Error(
         `tool-subagent: provider "${provider.name}" does not support \`backgroundMode: continuable\``,
@@ -317,6 +425,29 @@ export function apply(ctx: Context, config: Config): void {
           required: true,
           description: wording.promptDescription,
         },
+        ...routeSelectionSupported && profileNames.length > 0 ? {
+          profile: {
+            type: 'string' as const,
+            enum: profileNames,
+            description: profileDescription(modelSelection, profileNames),
+          },
+        } : {},
+        ...routeSelectionSupported && modelSelection.allowDirectModelSelection ? {
+          provider: {
+            type: 'string' as const,
+            description: 'Explicit LLM provider route for this child. Supply together with model; do not combine with profile.',
+          },
+          model: {
+            type: 'string' as const,
+            description: 'Explicit provider-owned model id for this child. Supply together with provider; do not combine with profile.',
+          },
+          ...reasoningEffortSupported ? {
+            reasoning_effort: {
+              type: 'string' as const,
+              description: 'Optional adapter-owned reasoning effort for the explicit provider/model route. Do not combine with profile.',
+            },
+          } : {},
+        } : {},
         ...backgroundEnabled ? {
           run_in_background: {
             type: 'boolean' as const,
@@ -376,12 +507,22 @@ export function apply(ctx: Context, config: Config): void {
         }
 
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
+        const selection = resolveProfileSelection(
+          args as typeof args & ModelRouteRequest,
+          modelSelection,
+          config.agentOptions,
+          routeSelectionSupported,
+          instructionSupported,
+          reasoningEffortSupported,
+        )
         const request = {
           label: args.description,
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
-          ...config.agentOptions !== undefined ? { agentOptions: config.agentOptions } : {},
+          ...selection.agentOptions !== undefined ? { agentOptions: selection.agentOptions } : {},
           ...config.persona !== undefined ? { persona: config.persona } : {},
+          ...selection.instruction !== undefined ? { instruction: selection.instruction } : {},
+          ...selection.reasoningEffort !== undefined ? { reasoningEffort: selection.reasoningEffort } : {},
           ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},
         }
@@ -446,6 +587,13 @@ export function apply(ctx: Context, config: Config): void {
     if (name !== config.provider || disposeTool === undefined) return
     disposeTool()
     disposeTool = undefined
+  })
+  ctx.on('subagent/model-selection-updated', () => {
+    const provider = ctx.subagents.getProvider(config.provider)
+    if (provider === undefined || disposeTool === undefined) return
+    disposeTool()
+    disposeTool = undefined
+    mount(provider)
   })
   const present = ctx.subagents.getProvider(config.provider)
   if (present !== undefined) {

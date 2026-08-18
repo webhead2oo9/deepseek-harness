@@ -1,6 +1,12 @@
 /** Translate native Codex Responses events into Harness stream chunks. */
 
-import { CallId, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
+import {
+  CallId,
+  CONTEXT_WINDOW_EXCEEDED_CODE,
+  EMPTY_RESPONSE_CODE,
+  isContextWindowExceededError,
+  LlmError,
+} from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { CODEX_REPLAY_VERSION } from './serialize.ts'
 import { DONE } from './sse.ts'
@@ -79,11 +85,17 @@ function responseFailure(response: unknown, fallback: string): FinishReason {
     : undefined
   const reason = stringField(incomplete, 'reason')
   if (reason === 'max_output_tokens') return { kind: 'max-tokens' }
+  const message = stringField(error, 'message') ?? fallback
+  const providerCode = stringField(error, 'code')
+  const providerType = stringField(error, 'type')
+  const detail = [providerCode, providerType, reason, message].filter(value => value !== undefined).join(' ')
   return {
     kind: 'error',
     failure: {
-      message: stringField(error, 'message') ?? fallback,
-      code: stringField(error, 'code') ?? (reason?.toUpperCase() ?? 'CODEX_RESPONSE_FAILED'),
+      message,
+      code: isContextWindowExceededError(detail)
+        ? CONTEXT_WINDOW_EXCEEDED_CODE
+        : providerCode ?? (reason?.toUpperCase() ?? 'CODEX_RESPONSE_FAILED'),
     },
   }
 }

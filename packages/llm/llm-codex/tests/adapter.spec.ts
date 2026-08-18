@@ -146,6 +146,30 @@ describe('CodexAdapter', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it('selects an active context and clamps every source to catalog maximum metadata', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(catalogResponse([
+      { slug: 'bounded-override', context_window: 272_000, max_context_window: 872_000 },
+      { slug: 'unbounded-override', context_window: 272_000 },
+      { slug: 'bounded-catalog', context_window: 900_000, max_context_window: 872_000 },
+      { slug: 'bounded-fallback', max_context_window: 80_000 },
+    ]))))
+    const overridden = adapter({ modelContextWindow: 1_000_000 })
+    const defaults = adapter()
+
+    await expect(overridden.resolveModel('route', 'bounded-override')).resolves.toMatchObject({
+      context: { contextWindow: 872_000 },
+    })
+    await expect(overridden.resolveModel('route', 'unbounded-override')).resolves.toMatchObject({
+      context: { contextWindow: 1_000_000 },
+    })
+    await expect(defaults.resolveModel('route', 'bounded-catalog')).resolves.toMatchObject({
+      context: { contextWindow: 872_000 },
+    })
+    await expect(defaults.resolveModel('route', 'bounded-fallback')).resolves.toMatchObject({
+      context: { contextWindow: 80_000 },
+    })
+  })
+
   it('reports provider identity and retry policy', () => {
     const instance = adapter()
     expect(instance.providerInfo('openai-codex')).toEqual({ id: 'openai-codex', name: 'OpenAI Codex' })
@@ -237,6 +261,9 @@ describe('CodexAdapter', () => {
     [403, {}, 'AUTH'],
     [429, {}, 'RATE_LIMIT'],
     [400, {}, 'INVALID_REQUEST'],
+    [400, { error: { message: 'maximum context length exceeded', type: 'context_length_exceeded' } }, 'CONTEXT_WINDOW_EXCEEDED'],
+    [400, { error: { code: 'context_length_exceeded' } }, 'CONTEXT_WINDOW_EXCEEDED'],
+    [400, { error: { type: 'context_window_exceeded' } }, 'CONTEXT_WINDOW_EXCEEDED'],
     [500, {}, 'SERVER'],
     [418, { error: { message: 'teapot', code: 'TEAPOT' } }, 'TEAPOT'],
     [409, {}, 'HTTP_409'],

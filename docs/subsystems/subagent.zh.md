@@ -8,6 +8,38 @@ Service Definition：[dsh-subagent](../../packages/subagent/subagent)（`ctx.sub
 
 源码：[`packages/subagent/subagent/src/types.ts`](../../packages/subagent/subagent/src/types.ts)、[`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)和 [`packages/subagent/subagent/src/continuation.ts`](../../packages/subagent/subagent/src/continuation.ts)
 
+## 模型选择设置
+
+`SubagentRuntime` 会向可选设置服务注册 `subagent-model-selection`，并通过 `modelSelection()` 公开分离快照。组合值构成基础层。配置中的 provider/model 标识符是不透明字符串；路由是否可用由 LLM 运行时而不是设置校验决定。配置还可以携带仅对子代理生效的系统指令和不透明的适配器自有推理强度。附加、分离或提交修改后，`subagent/model-selection-updated` 会通知消费方重建派生的面向模型 schema。
+
+```ts type-equiv
+/** One deployment-described child model route. */
+interface SubagentModelProfile {
+  /** Model-facing profile purpose. */
+  readonly description: string
+  /** Registered LLM provider route. */
+  readonly provider: string
+  /** Provider-owned model id. */
+  readonly model: string
+  /** Optional child-only system instruction applied to every delegation using this profile. */
+  readonly instruction?: string
+  /** Optional adapter-owned reasoning effort applied to every delegation using this profile. */
+  readonly reasoningEffort?: string
+}
+```
+
+```ts type-equiv
+/** Shared profile and direct-selection policy. */
+interface SubagentModelSelectionSettings {
+  /** Whether delegation tools expose direct provider/model arguments. */
+  readonly allowDirectModelSelection: boolean
+  /** Named provider/model routes exposed by compatible delegation tools. */
+  readonly profiles: Readonly<Record<string, SubagentModelProfile>>
+}
+```
+
+可继续描述符存储解析后的 provider/model 对、子代理系统指令和推理强度，而不是配置名称，因此配置修改不会重定向或重写已建立的子 agent。[子代理模型配置 Agent Note](../../.agents/notes/implemented/feature/2026-08-17-subagent-model-profiles.md)记录了这项持久化决策与条件工具行为。
+
 ## 两类能力，两种发现方式
 
 提供方通过一个静态描述符公布其**启动时**功能，服务会在单次 run 存在之前即行检查；如果请求依赖提供方不具备的功能，会被明确拒绝（`SubagentError('UNSUPPORTED_CAPABILITY')`），绝不会被接受后静默忽略。这些 flag 仅描述单次 [`start()`](#the-provider-contract-subagentprovider) 路径，即由提供方组合子 agent 的路径。**可继续**子 agent 由继续执行管理器自行组合，因此它们由唯一一个可选方法把关，方法存在即为能力，并以 TypeScript 的类型收窄作为发现机制：[`SubagentProvider.prepareContinuable`](#the-provider-contract-subagentprovider)。
@@ -21,20 +53,27 @@ Service Definition：[dsh-subagent](../../packages/subagent/subagent)（`ctx.sub
  * {@link SubagentProvider.start} path, where the provider composes the child;
  * continuable children are composed by the continuation manager itself and are
  * gated by {@link SubagentProvider.prepareContinuable} instead. Each flag
- * corresponds one-to-one to a {@link SubagentStartRequest} option: `depthLimit`
- * to `maxDepth`; the other names match.
+ * corresponds to a {@link SubagentStartRequest} option: `depthLimit` to
+ * `maxDepth`, `modelRoute` to provider/model fields in `agentOptions`, and the
+ * other names match.
  */
 interface SubagentCapabilities {
   readonly outputSchema: boolean
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  /** Whether one-shot children install a requested child-only system instruction. */
+  readonly instruction: boolean
+  /** Whether one-shot children apply a requested reasoning effort to model calls. */
+  readonly reasoningEffort: boolean
+  /** Whether one-shot children honor requested `agentOptions.provider` and `agentOptions.model` routes. */
+  readonly modelRoute: boolean
 }
 ```
 
 ## 单次启动请求
 
-工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 output schema、depth、工具过滤器和 persona 需要对应的能力 flag 匹配。不支持的 schema 在启动时即失败；进程内后端将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。
+工具层根据模型输入、共享模型配置设置和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 output schema、depth、工具过滤器、persona、子代理系统指令、推理强度和显式 provider/model 路由需要对应的能力 flag 匹配。不支持的请求在启动时即失败；进程内后端会在父级路由上解析 provider/model，将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。
 
 ```ts type-equiv
 /**
@@ -63,6 +102,10 @@ interface SubagentStartRequest {
    * remaining turn work when it fires afterward.
    */
   readonly signal: AbortSignal
+  /**
+   * Child Agent options. Explicit provider/model fields require
+   * {@link SubagentCapabilities.modelRoute}; other fields remain provider-specific.
+   */
   readonly agentOptions?: AgentOptions
   /**
    * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects
@@ -93,6 +136,10 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /** Optional child-only system instruction. Requires {@link SubagentCapabilities.instruction}. */
+  readonly instruction?: string
+  /** Optional adapter-owned reasoning effort. Requires {@link SubagentCapabilities.reasoningEffort}. */
+  readonly reasoningEffort?: ReasoningEffortId
 }
 ```
 
@@ -634,6 +681,12 @@ getProvider(name: string): SubagentProvider | undefined
 list(): string[]
 
 /**
+ * Read a detached snapshot of the shared profile and direct-selection policy.
+ * @returns the current settings-backed value, or composition defaults without settings.
+ */
+modelSelection(): SubagentModelSelectionSettings
+
+/**
  * Establish a published child on the named provider. Capability and semantic
  * checks run before delegation. Provider ownership lasts until its promise
  * fulfills; a rejection therefore has no run for the caller to dispose and
@@ -648,7 +701,7 @@ async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>
 
 Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:171`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:193`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagent-events"></a>
 
@@ -674,7 +727,24 @@ A published child settled. Scope-filtered dispatch uses the same delegating pare
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:166`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:185`](../../packages/subagent/subagent/src/index.ts)
+
+<a id="subagentmodel-selection-updated--emit"></a>
+
+#### `subagent/model-selection-updated` — emit
+
+The shared model-profile settings changed. Delegation consumers re-register model-visible schemas from SubagentRuntime.modelSelection.
+
+```ts cordis-catalog
+/**
+ * The shared model-profile settings changed. Delegation consumers re-register
+ * model-visible schemas from {@link SubagentRuntime.modelSelection}.
+ * @mode emit
+ */
+'subagent/model-selection-updated'(): void
+```
+
+Source: [`packages/subagent/subagent/src/index.ts:165`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentprovider-added--emit"></a>
 
@@ -691,7 +761,7 @@ A provider became resolvable in the registry.
 'subagent/provider-added'(provider: SubagentProvider): void
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:140`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:153`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentprovider-removed--emit"></a>
 
@@ -708,7 +778,7 @@ A provider left the registry. Accepted runs remain holder-owned.
 'subagent/provider-removed'(name: string): void
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:146`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:159`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentstart--emit"></a>
 
@@ -732,5 +802,5 @@ A provider established a published child. For in-process providers, `ctx.agents.
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:157`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:176`](../../packages/subagent/subagent/src/index.ts)
 <!-- END GENERATED cordis-surface -->

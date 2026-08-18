@@ -44,7 +44,7 @@ declare module '@deepseek-ai/dsh-session/types' {
  * Supporting another composition input is a deliberate version change, never
  * an implicit extra field.
  */
-export const SUBAGENT_DESCRIPTOR_VERSION = 2
+export const SUBAGENT_DESCRIPTOR_VERSION = 3
 
 /** Fields shared by every supported `subagent/descriptor` payload. */
 interface SubagentDescriptorBase {
@@ -78,6 +78,10 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
   readonly agentModel?: string
   /** Per-child persona that shadows the deployment persona on resume. */
   readonly persona?: string
+  /** Child-only system instruction reapplied on resume. */
+  readonly instruction?: string
+  /** Adapter-owned reasoning effort reapplied on resume. */
+  readonly reasoningEffort?: string
   /** Child tool scoping reapplied on resume. */
   readonly toolFilter?: ToolRestriction
 }
@@ -113,6 +117,10 @@ export interface ContinuableSubagentDescriptorInput extends SubagentDescriptorIn
   readonly agentModel?: string
   /** Requested per-child persona. */
   readonly persona?: string
+  /** Requested child-only system instruction. */
+  readonly instruction?: string
+  /** Requested adapter-owned reasoning effort. */
+  readonly reasoningEffort?: string
   /** Requested child tool scoping. */
   readonly toolFilter?: ToolRestriction
 }
@@ -134,6 +142,8 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
   'agentProvider',
   'agentModel',
   'persona',
+  'instruction',
+  'reasoningEffort',
   'toolFilter',
 ])
 const TOOL_FILTER_KEYS = new Set(['allow', 'deny'])
@@ -232,6 +242,8 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
   const agentProvider = optionalString(value, 'agentProvider')
   const agentModel = optionalString(value, 'agentModel')
   const persona = optionalString(value, 'persona')
+  const instruction = optionalString(value, 'instruction')
+  const reasoningEffort = optionalString(value, 'reasoningEffort')
   const toolFilter = Object.hasOwn(value, 'toolFilter')
     ? parseToolFilter(value['toolFilter'])
     : undefined
@@ -243,6 +255,8 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
     ...agentProvider !== undefined ? { agentProvider } : {},
     ...agentModel !== undefined ? { agentModel } : {},
     ...persona !== undefined ? { persona } : {},
+    ...instruction !== undefined ? { instruction } : {},
+    ...reasoningEffort !== undefined ? { reasoningEffort } : {},
     ...toolFilter !== undefined ? { toolFilter } : {},
   }
 }
@@ -284,6 +298,8 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
       ...input.agentProvider !== undefined ? { agentProvider: input.agentProvider } : {},
       ...input.agentModel !== undefined ? { agentModel: input.agentModel } : {},
       ...input.persona !== undefined ? { persona: input.persona } : {},
+      ...input.instruction !== undefined ? { instruction: input.instruction } : {},
+      ...input.reasoningEffort !== undefined ? { reasoningEffort: input.reasoningEffort } : {},
       ...input.toolFilter !== undefined ? { toolFilter: input.toolFilter } : {},
     }
   const snapshot = snapshotJsonValue(candidate)

@@ -1227,6 +1227,16 @@
     },
     {
       "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentModelProfile",
+      "source": "packages/subagent/subagent/src/model-selection.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentModelSelectionSettings",
+      "source": "packages/subagent/subagent/src/model-selection.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
       "symbol": "SubagentCapabilities",
       "source": "packages/subagent/subagent/src/types.ts"
     },

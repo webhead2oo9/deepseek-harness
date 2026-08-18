@@ -60,9 +60,9 @@ Each in-process subagent runs in its **own `Session`** (own id, `parentSession` 
 
 `dsh-tool-subagent` passes its execution signal to `start()`, awaits the child result, and disposes the run before reporting. Non-completed outcomes become error results rather than successful partial output, and independent result and disposal rejections retain both diagnostics.
 
-### Provider selection is config, not model-facing
+### Backend selection is config, not model-facing
 
-`dsh-tool-subagent` binds to exactly one provider name (`Config.provider`); the model sees only `{ description, prompt }`. To expose more than one transport, load the tool plugin more than once, each bound to a different provider and a distinct `toolName` (the tool registry rejects a duplicate name). The *service* holds the multi-provider registry; the *tool* picks one — the schema carries no provider/type parameter.
+`dsh-tool-subagent` binds to exactly one subagent backend name (`Config.provider`). To expose more than one transport, load the tool plugin more than once, each bound to a different backend and a distinct `toolName` (the tool registry rejects a duplicate name). The *service* holds the multi-provider registry and the *tool* picks one; no model-facing field changes the transport. A compatible backend may separately expose persisted LLM route profiles or opt-in direct provider/model fields as decided in [the subagent model profiles Agent Note](2026-08-17-subagent-model-profiles.md).
 
 ## Testing
 

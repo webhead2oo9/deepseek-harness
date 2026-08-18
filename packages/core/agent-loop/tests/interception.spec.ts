@@ -553,6 +553,100 @@ describe('agent/pre-step', () => {
   })
 })
 
+describe('agent/request-admission', () => {
+  it('rebuilds only the message surface after a durable replacement and dispatches once', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('request-admission-rebuild'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const seen: Array<{ rebuild: number; frozen: boolean; text: string }> = []
+    ctx.on('agent/request-admission', async ({ agent: subject, request, rebuild }, next) => {
+      if (subject !== agent) return next()
+      const text = request.messages
+        .flatMap(message => message.content)
+        .map(block => block.type === 'text' ? block.text : '')
+        .join('')
+      seen.push({ rebuild, frozen: Object.isFrozen(request) && Object.isFrozen(request.messages), text })
+      if (rebuild > 0) return next()
+      const original = subject.session.surface.nodes[0]!
+      subject.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'replacement' }],
+        source: { kind: 'plugin', plugin: 'admission-test' },
+      }), {
+        surfaceOp: { op: 'replace', start: original, end: original },
+        sourceEventSeqs: [original],
+      })
+      return { kind: 'rebuild' }
+    })
+
+    send(agent, 'original')
+    await waitForIdle(ctx, agent)
+
+    expect(seen).toEqual([
+      { rebuild: 0, frozen: true, text: 'original' },
+      { rebuild: 1, frozen: true, text: 'replacement' },
+    ])
+    expect(adapter.requests).toHaveLength(1)
+    expect(adapter.requests[0]?.messages.flatMap(message => message.content))
+      .toContainEqual({ type: 'text', text: 'replacement' })
+  })
+
+  it('bounds admission listeners that make durable progress forever', async () => {
+    const adapter = new MockAdapter([textResponse('unused')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('request-admission-rebuild-cap'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    let replacements = 0
+    ctx.on('agent/request-admission', async ({ agent: subject }) => {
+      const original = subject.session.surface.nodes[0]!
+      replacements += 1
+      subject.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `replacement ${replacements}` }],
+        source: { kind: 'plugin', plugin: 'admission-loop-test' },
+      }), {
+        surfaceOp: { op: 'replace', start: original, end: original },
+        sourceEventSeqs: [original],
+      })
+      return { kind: 'rebuild' }
+    })
+
+    send(agent, 'hello')
+    await waitForIdle(ctx, agent)
+
+    expect(replacements).toBe(8)
+    expect(adapter.requests).toHaveLength(0)
+    const turnEnd = events(agent).findLast(event => event.type === 'turn/end')
+    if (turnEnd?.type !== 'turn/end' || turnEnd.data.reason.kind !== 'error') {
+      throw new Error('expected an error turn end')
+    }
+    expect(turnEnd.data.reason.error.message).toContain('exceeded 8 durable rebuilds')
+  })
+
+  it('rejects a rebuild request without a durable surface replacement', async () => {
+    const adapter = new MockAdapter([textResponse('unused')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('request-admission-no-progress'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    ctx.on('agent/request-admission', async () => ({ kind: 'rebuild' }))
+
+    send(agent, 'hello')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests).toHaveLength(0)
+    const turnEnd = events(agent).findLast(event => event.type === 'turn/end')
+    if (turnEnd?.type !== 'turn/end' || turnEnd.data.reason.kind !== 'error') {
+      throw new Error('expected an error turn end')
+    }
+    expect(turnEnd.data.reason.error.message).toContain('without a durable surface replacement')
+  })
+})
+
 describe('agent/session-start', () => {
   it('fires once with source "startup" for a fresh create, before the first turn', async () => {
     const adapter = new MockAdapter([textResponse('ok')])

@@ -60,9 +60,9 @@ bash seam（[能力 seam](../architecture/2026-06-13-capability-seams.md)）在�
 
 `dsh-tool-subagent` 将其执行信号传给 `start()`，等待子 agent 结果，并在报告前 dispose 该 run。非完成态的结果变为错误结果，而非成功的部分输出；结果与 dispose 的拒绝相互独立，且两项诊断信息都会保留。
 
-### 提供方选择是配置，不面向模型
+### 后端选择是配置，不面向模型
 
-`dsh-tool-subagent` 绑定到恰好一个提供方名称（`Config.provider`）；模型只看到 `{ description, prompt }`。若要暴露多种传输方式，请多次加载该工具插件，每次绑定不同的提供方和不同的 `toolName`（工具注册表拒绝重名）。*服务*持有多提供方注册表；*工具*选择其中一个——schema 中没有提供方/type 参数。
+`dsh-tool-subagent` 绑定到恰好一个子代理后端名称（`Config.provider`）。若要暴露多种传输方式，请多次加载该工具插件，每次绑定不同的后端和不同的 `toolName`（工具注册表拒绝重名）。*服务*持有多提供方注册表，*工具*选择其中一个；面向模型的字段不会改变传输方式。兼容后端可以按照[子代理模型配置 Agent Note](2026-08-17-subagent-model-profiles.md)另行暴露持久化的 LLM 路由配置，或显式开启直接提供商/模型字段。
 
 ## 测试
 

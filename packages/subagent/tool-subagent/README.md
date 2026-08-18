@@ -22,10 +22,18 @@ A foreground call passes the execution signal through startup and execution, awa
 | `toolName` | Model-facing name, default `subagent`; distinct for every loaded instance. |
 | `enableRunInBackground` | Exposes background mode, default `true`; disabling also rejects forced background calls. |
 | `backgroundMode` | Background lifecycle policy, default `one-shot`. `one-shot` defaults calls to foreground; `continuable` defaults them to background, requires the provider's `prepareContinuable` capability, and returns a durable child id without requiring the follow-up tool. |
-| `agentOptions` | Provider-specific child `provider`, `model`, and positive `maxTokens`; the in-process provider treats explicit values as overrides of inherited parent options. |
+| `agentOptions` | Provider-specific child `provider`, `model`, and positive `maxTokens`; provider/model fields require the backend's `modelRoute` capability, and the in-process provider treats explicit values as overrides of inherited parent options. |
 | `persona` | Per-child persona; requires provider `persona` capability. |
 | `toolFilter` | Per-child global-tool restriction; requires `toolFilter` capability. |
 | `maxDepth` | Absolute delegation-depth cap, default `3` (`0` forbids delegation); a numeric cap requires the `depthLimit` capability and fails the mount without it. `'provider-managed'` sends no cap for an out-of-process provider whose budget belongs to the child harness. The tool stays visible at the cap; each attempted start checks the calling agent's current depth and returns an errored tool result when rejected. |
+
+## Model profiles
+
+`ctx.subagents` owns the shared `subagent-model-selection` settings namespace. Its `profiles` dictionary maps each model-facing name to a description, an opaque provider/model pair, and an optional child-only system instruction; `allowDirectModelSelection` defaults to `false`. The Web Subagents settings page edits the user layer, while the `subagent` service's composition config supplies deployment defaults when settings are absent.
+
+A backend with the `modelRoute` capability exposes route-only profiles; a profile carrying an instruction additionally requires the backend's `instruction` capability. Direct `provider` plus `model` fields appear when the opt-in is enabled. A call chooses one profile or one complete direct pair. The resolved route replaces only the configured child provider/model, preserving `maxTokens` and unrelated options. Backends without the capability expose none of these fields and reject forced route arguments instead of ignoring them. Provider and model strings are not restricted to the live catalog; the child LLM runtime reports an unavailable route when execution reaches it.
+
+Profile changes re-register the tool definition for subsequent parent requests. Continuable children persist the resolved provider/model pair and child system instruction rather than the profile name, so editing or deleting a profile does not retarget or rewrite an established child.
 
 ## Concurrency
 
@@ -37,15 +45,15 @@ Foreground and background calls are concurrency-safe: sibling delegations in one
 
 #### What the model sees
 
-The generated default [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent) under this instance's configured name while its provider exists. Provider context inheritance changes the tool and prompt descriptions. Enabled background mode adds `run_in_background`: continuable mode documents its `true` default, runtime settlement notice, and explicit foreground override, while one-shot mode documents its `false` default and the job id collected with `job_output` or stopped with `job_kill`. While the tool is visible in an assembly's scope, a `tool:<toolName>` system-prompt section tells the model to start independent continuable delegations together, keep working while they run, and choose foreground only when its next action depends on the result; a tool restriction removes both its schema and this guidance.
+The generated default [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent) under this instance's configured name while its provider exists. Provider context inheritance changes the tool and prompt descriptions. Compatible backends add the current profile enum and descriptions, plus direct provider/model fields when enabled. Enabled background mode adds `run_in_background`: continuable mode documents its `true` default, runtime settlement notice, and explicit foreground override, while one-shot mode documents its `false` default and the job id collected with `job_output` or stopped with `job_kill`. While the tool is visible in an assembly's scope, a `tool:<toolName>` system-prompt section tells the model to start independent continuable delegations together, keep working while they run, and choose foreground only when its next action depends on the result; a tool restriction removes both its schema and this guidance.
 
 #### Token effect
 
-Fixed schema cost per parent request; each provider instance adds one schema, and each continuable instance adds one short system-prompt section.
+Base schema cost is fixed per parent request. Configured profile names and descriptions add variable schema text; direct selection adds two optional string fields. Each provider instance adds one schema, and each continuable instance adds one short system-prompt section.
 
 #### KV Cache effect
 
-Prefix-stable while provider instances, names, descriptions, and schemas are unchanged. Provider registration lifecycle may invalidate parent reuse from the first changed tool definition.
+Prefix-stable while provider instances, names, profile settings, descriptions, and schemas are unchanged. A profile/settings or provider-registration change may invalidate parent reuse from the first changed tool definition.
 
 ### Foreground result
 
@@ -79,4 +87,4 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 - **Background runs expose no result through this tool** — a one-shot task's final output is collected through the generic task surface, and a continuable child's output stays in its own session, read by its subagent id. The settlement notice states how that child ended and carries any final assistant message, but it is not this call's return value and cannot be awaited here.
 - **Duplicate names across waiting one-shot instances are detected late** (`TODO(subagent-dup-toolname)`) — continuable instances reserve their prompt-section name during plugin application, but preventing provider-registration rollback for waiting one-shot instances requires a registry of intended names.
-- **Child policy is fixed per instance** — another model, persona, tool filter, or depth cap requires another distinctly named tool.
+- **Non-route child policy is fixed per instance** — another persona, tool filter, token budget, or depth cap requires another distinctly named tool.

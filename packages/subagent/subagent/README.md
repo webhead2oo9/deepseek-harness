@@ -15,6 +15,7 @@ The [subagent family overview](../README.md) maps implementations and model-faci
 | `registerProvider(provider)` | Register one trusted same-process implementation by name. Registration is effect-scoped; removing it prevents new starts but does not revoke runs already returned to callers. Duplicate names fail loud. |
 | `getProvider(name)` | Return the provider, or `undefined` when absent. |
 | `list()` | Return provider names in insertion order. |
+| `modelSelection()` | Return a detached snapshot of shared named model profiles and the direct-selection policy. The optional settings provider layers its user document over composition defaults. |
 | `start(name, request)` | Validate an ordinary caller request, resolve its detached `one-shot` descriptor, then await the provider until a real one-shot child is published. Fulfillment returns a holder-owned `SubagentRun`; rejection means the provider has already cleaned every unpublished startup resource, while post-publication turn or infrastructure faults settle through the run. Continuable children never enter through this operation. |
 | `startContinuable(spec)` | Establish one durable continuable child and deliver its initial prompt. Resolves with `{ childId, messageId }` when the child's inbox accepts that prompt, without waiting for the turn to start or for the message to reach the Session log; any earlier failure rejects with no ids and rolls the child back entirely. Requires `ctx.agents`, session persistence, and a provider with the `prepareContinuable` capability. |
 | `followup(parent, childId, content, { source, signal })` | Deliver one later message from the exact live direct parent as the child's next FIFO turn, matching `Agent.followup()` terminology, and return the accepted `MessageId`. A resident child's inbox accepts it directly (waking a waiting Activation); an absent one cold-resumes from its persisted Session. Requires `ctx.agents`; cold resume also requires session persistence. |
@@ -31,6 +32,17 @@ Follow-up authority comes from the exact live direct parent recorded in the chil
 
 Same-process requests, descriptors, results, and event payloads are trusted typed values borrowed as immutable. The service does not clone or freeze them; serialization and hostile-input validation belong at actual process, worker, persistence, and model boundaries.
 
+## Model-selection settings
+
+The service registers `subagent-model-selection` when `ctx.settings` exists. Composition config and the stored user layer share this value:
+
+| Key | Meaning |
+|---|---|
+| `profiles` | Dictionary of model-facing names to `{ description, provider, model, instruction?, reasoningEffort? }`. Names and required fields must be non-empty; provider/model values are opaque and may name an external adapter. The optional instruction is a child-only system-prompt section; the optional reasoning effort is an opaque adapter-owned id validated by the exact model route. |
+| `allowDirectModelSelection` | Whether compatible delegation tools expose direct provider/model arguments; default `false`. |
+
+A committed settings change emits `subagent/model-selection-updated`; consumers re-read `modelSelection()` instead of retaining settings-owned objects. Without a settings provider, composition config remains authoritative. The [model profiles Agent Note](../../../.agents/notes/implemented/feature/2026-08-17-subagent-model-profiles.md) owns the resolution and durability rationale.
+
 ## Capabilities
 
 Start-time features are advertised in `provider.capabilities` because the service must reject an unsupported one-shot request before child creation:
@@ -39,8 +51,11 @@ Start-time features are advertised in `provider.capabilities` because the servic
 - `depthLimit` — enforce `maxDepth`.
 - `toolFilter` — apply the requested child tool restriction.
 - `persona` — apply a per-child persona.
+- `instruction` — install an additional child-only system instruction.
+- `reasoningEffort` — apply an adapter-owned reasoning effort to child model calls.
+- `modelRoute` — honor explicit provider/model fields in one-shot `agentOptions`.
 
-Every in-process child is composed by one call, `applyChildComposition(childCtx, parent, composition)`, which joins the parent's agent-preset composition before applying the child's own persona and tool filter. The join is what gives the child its capabilities: with every model-facing row on the agent plane, a child that joined nothing would reach the model with an empty tool registry ([`dsh-agent-presets`](../../preset/agent-presets/README.md)). Taking the parent as a parameter is deliberate — it makes composing a child WITHOUT that join unrepresentable at the call sites, which is the defect the one call exists to prevent. A deployment composing no preset roster joins nothing and needs nothing: its model-facing rows sit in the host composition, where the child already resolves them through the tool registry's global layer.
+Every in-process child is composed by one call, `applyChildComposition(childCtx, parent, composition)`, which joins the parent's agent-preset composition before applying the child's own persona, additional system instruction, reasoning effort, and tool filter. The join is what gives the child its capabilities: with every model-facing row on the agent plane, a child that joined nothing would reach the model with an empty tool registry ([`dsh-agent-presets`](../../preset/agent-presets/README.md)). Taking the parent as a parameter is deliberate — it makes composing a child WITHOUT that join unrepresentable at the call sites, which is the defect the one call exists to prevent. A deployment composing no preset roster joins nothing and needs nothing: its model-facing rows sit in the host composition, where the child already resolves them through the tool registry's global layer.
 
 `childSessionMeta()` records the joined preset id on the child's durable header for the same reason a top-level session records its own: the preset decides the tool schemas and prompt sections the model saw, so a cold read of the child's history has to rebuild that composition rather than the deployment default. It is read from the parent's live scope chain, not from the parent header, because a parent that switched preset while blank runs on the newer composition while its header still names the older one.
 
@@ -48,7 +63,7 @@ Continuable creation is the optional `SubagentProvider.prepareContinuable?()` me
 
 ## The durable descriptor
 
-The Service Definition owns the versioned `subagent/descriptor` session event vocabulary (`src/descriptor.ts`): `snapshotSubagentDescriptor()` validates and detaches the record before provider work, and `foldSubagentDescriptor()` validates the complete current-version payload before recovering it from a loaded child log. Every local session-backed start appends one descriptor with the provider name and lifecycle `mode`. A `one-shot` descriptor optionally carries the caller-owned durable display `label`; a `continuable` descriptor requires its durable creation label and additionally records resolved child `agentOptions.provider`/`model` and optional `persona`/`toolFilter` for cold resume. These are explicit fields, never the merge-extensible `AgentOptions` object, so an unrelated extension value cannot break continuation. The descriptor omits `subagentDepth` (the persisted header's `delegationDepth` is the monotone floor) and `outputSchema` (an Activation's result contract). The event is log-only: no `surfaceOp`, absent from model history, and retained by the append-only log across compaction. Malformed current-version payloads are corrupt; unsupported versions cannot be classified by this runtime.
+The Service Definition owns the versioned `subagent/descriptor` session event vocabulary (`src/descriptor.ts`): `snapshotSubagentDescriptor()` validates and detaches the record before provider work, and `foldSubagentDescriptor()` validates the complete current-version payload before recovering it from a loaded child log. Every local session-backed start appends one descriptor with the provider name and lifecycle `mode`. A `one-shot` descriptor optionally carries the caller-owned durable display `label`; a `continuable` descriptor requires its durable creation label and additionally records resolved child `agentOptions.provider`/`model` and optional `persona`/`instruction`/`reasoningEffort`/`toolFilter` for cold resume. These are explicit fields, never the merge-extensible `AgentOptions` object, so an unrelated extension value cannot break continuation. The descriptor omits `subagentDepth` (the persisted header's `delegationDepth` is the monotone floor) and `outputSchema` (an Activation's result contract). The event is log-only: no `surfaceOp`, absent from model history, and retained by the append-only log across compaction. Malformed current-version payloads are corrupt; unsupported versions cannot be classified by this runtime.
 
 ## Delegation depth
 

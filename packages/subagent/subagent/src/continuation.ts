@@ -30,7 +30,7 @@ import type {
   AgentSetupCommit,
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
-import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
+import { boundContextSummary, createUserMessage, errorChain, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -256,7 +256,12 @@ interface MaterializeInputs {
     delegatedPolicies: DelegatedPolicyOverrides
   }
   agentOptions: AgentOptions
-  composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
+  composition: {
+    persona?: string | undefined
+    instruction?: string | undefined
+    reasoningEffort?: ReturnType<typeof ReasoningEffortId> | undefined
+    toolFilter?: ToolRestriction | undefined
+  }
   signal: AbortSignal
 }
 
@@ -419,6 +424,8 @@ export class SubagentContinuationManager {
       ...agentProvider !== undefined ? { agentProvider } : {},
       ...agentModel !== undefined ? { agentModel } : {},
       ...request.persona !== undefined ? { persona: request.persona } : {},
+      ...request.instruction !== undefined ? { instruction: request.instruction } : {},
+      ...request.reasoningEffort !== undefined ? { reasoningEffort: request.reasoningEffort } : {},
       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
     })
     // Capture before the first await: a later parent switch belongs to the
@@ -442,7 +449,12 @@ export class SubagentContinuationManager {
         parent,
         create: { seed, meta: childSessionMeta(parent, childDepth, lineageSeedLength), delegatedPolicies },
         agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
-        composition: { persona: request.persona, toolFilter: request.toolFilter },
+        composition: {
+          persona: request.persona,
+          instruction: request.instruction,
+          reasoningEffort: request.reasoningEffort,
+          toolFilter: request.toolFilter,
+        },
         signal: spec.signal,
       })
       return this.submitMaterialized(
@@ -920,7 +932,14 @@ export class SubagentContinuationManager {
           ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
           ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
         },
-        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
+        composition: {
+          persona: descriptor.persona,
+          instruction: descriptor.instruction,
+          reasoningEffort: descriptor.reasoningEffort === undefined
+            ? undefined
+            : ReasoningEffortId(descriptor.reasoningEffort),
+          toolFilter: descriptor.toolFilter,
+        },
         signal: options.signal,
       })
     } catch (error: unknown) {

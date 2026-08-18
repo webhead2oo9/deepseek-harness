@@ -121,6 +121,8 @@ export async function startInProcessRun(
     appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, inherited)
     applyChildComposition(childCtx, parent, {
       persona: request.persona,
+      instruction: request.instruction,
+      reasoningEffort: request.reasoningEffort,
       toolFilter: request.toolFilter,
     })
     if (request.outputSchema !== undefined) {

@@ -6,7 +6,7 @@ SDK 提供方会在全新的子进程中把每个 subagent 作为完整的 DeepS
 
 ## 启动与所有权
 
-`start(request)` 先解析子进程工作目录，通过 `DeepSeekHarness` spawn 运行时，并在履行前完成 `initialize` 握手（携带配置的 `provider`/`model` 路由及可选的 `maxTokens` 输出上限）。因此，履行意味着子运行时已就绪、所有权已移交给调用方。spawn、握手或发布前取消失败时，只会在子进程被回收后拒绝；工作目录解析失败则会在尚未 spawn 任何内容时拒绝。
+`start(request)` 先解析子进程工作目录，通过 `DeepSeekHarness` spawn 运行时，并在履行前完成 `initialize` 握手（请求中的 provider/model 覆盖配置的路由默认值，同时采用配置的可选 `maxTokens` 输出上限）。因此，履行意味着子运行时已就绪、所有权已移交给调用方。spawn、握手或发布前取消失败时，只会在子进程被回收后拒绝；工作目录解析失败则会在尚未 spawn 任何内容时拒绝。
 
 工作目录的解析与 ACP 后端完全一致，并使用 seam 共享的进程外辅助工具（[`dsh-subagent`](../subagent/README.md)）：设置了 `cwd` 覆盖值时使用该值（加载时校验一次），否则使用发起委派的父会话 cwd，绝不使用服务器进程自身的 cwd。解析出的路径同时成为子进程 cwd 和其 SDK 会话的工作区 cwd。
 
@@ -20,7 +20,7 @@ SDK 客户端返回自有子活动，而不是提示词结果。提供方读取�
 
 ## 能力与上下文
 
-Provider 不宣告任何启动期能力（`outputSchema`/`depthLimit`/`toolFilter`/`persona` 全为 false），且 `inheritsParentContext: false`：子进程是另一进程里的全新运行时，唯一来自父方的输入是工作区 cwd。基于本 provider 的 `dsh-tool-subagent` 部署应设置 `maxDepth: 'provider-managed'`——子 harness 拥有自己的递归预算。
+Provider 宣告 `modelRoute`，不宣告其他启动期能力（`outputSchema`/`depthLimit`/`toolFilter`/`persona`/`instruction` 均为 false），且 `inheritsParentContext: false`：子进程是另一进程里的全新运行时，唯一来自父方的运行时事实是工作区 cwd。基于本 provider 的 `dsh-tool-subagent` 部署应设置 `maxDepth: 'provider-managed'`——子 harness 拥有自己的递归预算。
 
 ## 配置
 
@@ -30,8 +30,8 @@ Provider 不宣告任何启动期能力（`outputSchema`/`depthLimit`/`toolFilte
 | `command` | 必填 | 每次运行时 spawn 的可执行文件（子运行时 bin 或打包后的可执行文件）。 |
 | `args` | `[]` | 命令参数（通常是子进程的 `cordis.yml` 路径）。 |
 | `cwd` | 父会话 cwd | 工作目录覆盖；校验规则与 [`subagent-acp`](../subagent-acp/README.md) 相同。 |
-| `provider` | `deepseek-official` | 写入子进程 `initialize` 的提供方路由。 |
-| `model` | `deepseek-v4-flash` | 写入子进程 `initialize` 的模型。 |
+| `provider` | `deepseek-official` | 写入子进程 `initialize` 的默认提供方路由；请求路由可覆盖它。 |
+| `model` | `deepseek-v4-flash` | 写入子进程 `initialize` 的默认模型；请求路由可覆盖它。 |
 | `maxTokens` | 适配器／提供方路由默认值 | 写入子进程 `initialize` 的单次请求输出 token 上限；对子运行时的根 agent 及其进程内后代生效。 |
 | `env` | `{}` | 在凭据擦除后的父环境之上叠加的显式子环境（例如子进程自己的 `DEEPSEEK_API_KEY`，或 `DSH_CORDIS_CONFIG`）。 |
 | `shutdownTimeoutMs` | `1000` | dispose 期间协议 `shutdown` 交换的时限。 |
@@ -65,7 +65,7 @@ Provider 不宣告任何启动期能力（`outputSchema`/`depthLimit`/`toolFilte
 
 #### 模型看到的内容
 
-子运行时的模型会收到作为用户消息的独立任务，以及该运行时自身配置的系统提示词、工具和全新会话。它不会收到父级对话。本提供方不声明可选的启动时能力，因此本地服务会拒绝要求 persona、工具过滤、深度强制或结构化输出的请求，而不是静默省略这些要求。
+子运行时的模型会收到作为用户消息的独立任务，以及该运行时自身配置的系统提示词、工具和全新会话。它不会收到父级对话。本提供方声明模型路由选择，但不声明其他可选的启动时能力，因此本地服务会拒绝要求 persona、工具过滤、深度强制或结构化输出的请求，而不是静默省略这些要求。
 
 #### Token 影响
 
@@ -92,6 +92,6 @@ Provider 不宣告任何启动期能力（`outputSchema`/`depthLimit`/`toolFilte
 ## 已知限制与暂缓事项
 
 - **每次运行都使用全新的运行时进程**：不使用进程池；harness 运行时需要启动完整的插件树，因此每次运行的 spawn 成本高于 ACP 后端通常使用的子进程。
-- **不支持可选的启动时能力**：父级无法在子进程内强制执行 `outputSchema`、深度限制、工具过滤或 persona；应改为配置子进程自身的 `cordis.yml`。
+- **不支持可选的启动时能力**：父级无法在子进程内强制执行 `outputSchema`、深度限制、工具过滤、persona 或子代理系统指令；应改为配置子进程自身的 `cordis.yml`。
 - **子进程的 transcript（文本记录）保留在其自身的会话根目录中**：父级日志只记录委派工具调用／结果（seam 的子级隔离规则）；流式 `session.event` 通道只用于提取输出，不会桥接到父级日志中。
 - **仅支持本地子进程**：解析出的 cwd 是本地路径；远程运行时需要独立的后端。

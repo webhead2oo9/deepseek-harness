@@ -7,7 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Inbox } from './inbox.ts'
@@ -53,6 +53,9 @@ export type AgentStatus = 'idle' | 'running'
 export type PreStepDecision =
   | { kind: 'reject' }
   | { kind: 'enter'; messages: UserMessage[] }
+
+/** Action returned by a listener that requires the immutable request to be reconstructed before dispatch. */
+export type RequestAdmissionAction = { kind: 'rebuild' } | undefined
 
 /** Action returned by a listener that owns model-request recovery. */
 export type RequestErrorAction = { kind: 'retry' } | undefined
@@ -242,6 +245,26 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
     */
     'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
+    /**
+     * Admit one immutable, reconstructable model request immediately before
+     * adapter dispatch. A listener that durably changes model-visible state
+     * returns `{ kind: 'rebuild' }` without calling `next()`; the loop then
+     * reconstructs messages from the durable surface and runs admission again
+     * with the same prepared header and adapter registration. Calling
+     * `next()` admits the current request unless a later listener rebuilds it.
+     * Rebuilds require durable surface progress and are bounded per request, so
+     * every listener must converge or let the turn fail before adapter dispatch.
+     * @param payload.agent - the agent making the model call.
+     * @param payload.turn - the open turn number.
+     * @param payload.step - the step whose request this is.
+     * @param payload.request - the complete frozen request reconstructed from the durable open step.
+     * @param payload.contextWindow - optional active capacity resolved by the serving adapter.
+     * @param payload.rebuild - number of earlier durable rebuilds admitted for this request attempt.
+     * @param payload.signal - the current turn's explicit abort signal.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+     * @mode waterfall
+     */
+    'agent/request-admission'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; request: GenerateOptions; contextWindow: number | undefined; rebuild: number; signal: AbortSignal }, next: () => Promise<RequestAdmissionAction>): Promise<RequestAdmissionAction>
     /**
      * Handle one failed model-request attempt before the loop retries or closes
      * its step. A listener returns `{ kind: 'retry' }` without calling `next()`

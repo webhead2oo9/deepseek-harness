@@ -480,12 +480,12 @@ describe('headless stream-json snapshots', () => {
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('recovers from context overflow through an assembled compaction', async () => {
+  it('compacts a complete request before dispatch through the assembled application', async () => {
     const prompt = await scenarioPrompt(compactionScenarioDir, 'compaction-recovery')
     let expectedSession = await readFile(compactionSessionFixture, 'utf8')
     let runCwd = ''
     const result = await runLoaderSmoke({
-      label: 'compaction recovery headless stream-json snapshot',
+      label: 'complete-request compaction headless stream-json snapshot',
       tempDirPrefix: 'headless-snapshot-compaction-recovery-',
       binScript,
       libBinScript: binScript,
@@ -505,9 +505,12 @@ describe('headless stream-json snapshots', () => {
         if (actual === undefined) throw new Error('compaction snapshot did not persist its session')
         const records = parseJsonl(actual.content)
         const types = records.map(record => record.type)
-        expect(types.filter(type => type === 'compaction/start')).toHaveLength(1)
-        expect(types.filter(type => type === 'compaction/summary')).toHaveLength(1)
-        expect(types.filter(type => type === 'compaction/end')).toHaveLength(1)
+        const starts = types.filter(type => type === 'compaction/start')
+        const summaries = types.filter(type => type === 'compaction/summary')
+        const ends = types.filter(type => type === 'compaction/end')
+        expect(starts.length).toBeGreaterThan(0)
+        expect(summaries).toHaveLength(starts.length)
+        expect(ends).toHaveLength(starts.length)
         const start = types.indexOf('compaction/start')
         const summary = types.indexOf('compaction/summary')
         const replacement = records.findIndex((record) => {
