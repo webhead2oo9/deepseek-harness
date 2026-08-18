@@ -2121,32 +2121,32 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 ```ts config-catalog
 /** Composition defaults for shared subagent model selection. */
-export type Config = SubagentModelSelectionSettings
+export type Config = SubagentModelSelectionConfig
 
-/** Shared profile and direct-selection policy. */
-export interface SubagentModelSelectionSettings {
+/** Composition and persisted settings layers before reset markers are normalized. */
+export interface SubagentModelSelectionConfig {
   /** Whether delegation tools expose direct provider/model arguments. */
   readonly allowDirectModelSelection: boolean
   /** Named provider/model routes exposed by compatible delegation tools. */
-  readonly profiles: Readonly<Record<string, SubagentModelProfile>>
+  readonly profiles: Readonly<Record<string, SubagentModelProfileConfig>>
 }
 
-/** One deployment-described child model route. */
-export interface SubagentModelProfile {
+/** One persisted profile layer, where null clears an inherited optional field. */
+export interface SubagentModelProfileConfig {
   /** Model-facing profile purpose. */
   readonly description: string
   /** Registered LLM provider route. */
   readonly provider: string
   /** Provider-owned model id. */
   readonly model: string
-  /** Optional child-only system instruction applied to every delegation using this profile. */
-  readonly instruction?: string
-  /** Optional adapter-owned reasoning effort applied to every delegation using this profile. */
-  readonly reasoningEffort?: string
+  /** Child-only instruction, or null to clear the composition value. */
+  readonly instruction?: string | null
+  /** Adapter-owned effort, or null to clear the composition value. */
+  readonly reasoningEffort?: string | null
 }
 ```
 
-来源：[`packages/subagent/subagent/src/index.ts:190`](../packages/subagent/subagent/src/index.ts)
+来源：[`packages/subagent/subagent/src/index.ts:195`](../packages/subagent/subagent/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-acp"></a>
 

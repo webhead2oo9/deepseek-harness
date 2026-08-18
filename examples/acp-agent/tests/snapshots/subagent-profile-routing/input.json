@@ -1,0 +1,7 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    { "op": "prompt", "text": "Use the deliberate subagent profile exactly once to delegate: 'Reply with PROFILE_CHILD_OK.' Wait for it, then reply with PROFILE_PARENT_DONE." }
+  ]
+}

@@ -35,11 +35,19 @@ describe('xAI plugin configuration', () => {
   it('registers one auth driver and one LLM route', () => {
     const register = vi.fn()
     const registerAdapter = vi.fn()
-    const ctx = { modelAuth: { register }, llm: { registerAdapter } } as unknown as Context
+    const attachments = {}
+    const get = vi.fn(() => attachments)
+    const ctx = { modelAuth: { register }, llm: { registerAdapter }, get } as unknown as Context
     apply(ctx, {})
     expect(register.mock.calls[0]?.[0]).toBeInstanceOf(XaiAuthDriver)
     expect(registerAdapter.mock.calls[0]?.[0]).toEqual([XAI_OAUTH_PROVIDER])
-    expect(registerAdapter.mock.calls[0]?.[1]).toBeInstanceOf(XaiAdapter)
+    const adapter = registerAdapter.mock.calls[0]?.[1] as XaiAdapter
+    expect(adapter).toBeInstanceOf(XaiAdapter)
+    const registered = adapter as unknown as {
+      config: { resolveAttachments: () => unknown }
+    }
+    expect(registered.config.resolveAttachments()).toBe(attachments)
+    expect(get).toHaveBeenCalledWith('attachments')
   })
 
   it('removes its auth driver and LLM route when the plugin fiber disposes', async () => {

@@ -146,6 +146,39 @@ export function textField(field: string): CardFieldSpec {
 }
 
 /**
+ * A field limited to a finite set of string values.
+ * @param field - field name inside the namespace section.
+ * @param values - accepted values in the control.
+ * @returns the field's conversion spec.
+ */
+export function enumField(field: string, values: readonly string[]): CardFieldSpec {
+  return {
+    field,
+    format: value => typeof value === 'string' ? value : '',
+    parse: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return { kind: 'clear' }
+      return values.includes(trimmed) ? { kind: 'set', value: trimmed } : undefined
+    },
+  }
+}
+
+/**
+ * A checkbox-compatible boolean field.
+ * @param field - field name inside the namespace section.
+ * @returns the field's conversion spec.
+ */
+export function booleanField(field: string): CardFieldSpec {
+  return {
+    field,
+    format: value => value === true ? 'true' : value === false ? 'false' : '',
+    parse: text => text === 'true' ? { kind: 'set', value: true }
+      : text === 'false' ? { kind: 'set', value: false }
+        : undefined,
+  }
+}
+
+/**
  * Stages one card's edits over one settings namespace and writes them on save.
  *
  * The form publishes through a snapshot store because slot components read

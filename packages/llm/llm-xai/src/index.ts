@@ -119,5 +119,6 @@ export function apply(ctx: Context, config: Config): void {
   ctx.llm.registerAdapter([XAI_OAUTH_PROVIDER], new XaiAdapter({
     options: () => options,
     modelAuth: ctx.modelAuth,
+    resolveAttachments: () => ctx.get('attachments'),
   }))
 }

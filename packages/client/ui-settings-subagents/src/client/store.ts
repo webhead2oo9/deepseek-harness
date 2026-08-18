@@ -10,8 +10,8 @@ export interface SubagentProfile {
   description: string
   provider: string
   model: string
-  instruction?: string
-  reasoningEffort?: string
+  instruction?: string | null
+  reasoningEffort?: string | null
 }
 
 /** Editable value stored under the Host namespace. */
@@ -73,8 +73,8 @@ export function readValue(value: unknown): SubagentSettingsValue {
       typeof profile.description !== 'string'
       || typeof profile.provider !== 'string'
       || typeof profile.model !== 'string'
-      || (profile.instruction !== undefined && typeof profile.instruction !== 'string')
-      || (profile.reasoningEffort !== undefined && typeof profile.reasoningEffort !== 'string')
+      || (profile.instruction !== undefined && profile.instruction !== null && typeof profile.instruction !== 'string')
+      || (profile.reasoningEffort !== undefined && profile.reasoningEffort !== null && typeof profile.reasoningEffort !== 'string')
     ) {
       throw new Error(`subagent profile ${name} is invalid`)
     }

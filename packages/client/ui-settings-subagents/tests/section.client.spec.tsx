@@ -127,6 +127,30 @@ describe('SubagentsSection', () => {
     fireEvent.click(screen.getByText('Edit'))
     expect(screen.getByLabelText('Name').hasAttribute('disabled')).toBe(true)
   })
+  it('persists reset markers when optional deployment defaults are cleared', () => {
+    const saveProfile = vi.fn().mockResolvedValue(true)
+    const state: SubagentsState = {
+      ...ready,
+      baseProfileNames: ['fast'],
+      value: { ...ready.value, profiles: { fast: {
+        ...ready.value.profiles.fast!,
+        instruction: 'Inspect every claim.',
+        reasoningEffort: 'high',
+      } } },
+    }
+    render(<SubagentsSection {...props(state, { saveProfile })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit fast' }))
+    fireEvent.change(screen.getByLabelText(/Reasoning effort/), { target: { value: '' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Child system instruction/ }), { target: { value: '' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(saveProfile).toHaveBeenCalledWith('fast', {
+      description: 'Quick work',
+      provider: 'deepseek',
+      model: 'chat',
+      instruction: null,
+      reasoningEffort: null,
+    }, 'fast')
+  })
   it('marks and resets a customized deployment default', () => {
     const deleteProfile = vi.fn().mockResolvedValue(true)
     render(<SubagentsSection {...props({

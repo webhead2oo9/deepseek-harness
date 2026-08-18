@@ -11,6 +11,12 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'exaSearchTitle' | 'exaSearchDescription'
+  | 'exaSearchApiKey' | 'exaSearchApiKeyHint' | 'exaSearchApiKeySet' | 'exaSearchApiKeyUnset'
+  | 'exaSearchBaseUrl' | 'exaSearchBaseUrlHint'
+  | 'exaSearchMode' | 'exaSearchModeHint' | 'exaSearchModeAuto' | 'exaSearchModeFast' | 'exaSearchModeInstant'
+  | 'exaSearchResults' | 'exaSearchResultsHint' | 'exaSearchModeration' | 'exaSearchModerationHint'
+  | 'exaSearchHighlights' | 'exaSearchHighlightsHint' | 'exaSearchFreshness' | 'exaSearchFreshnessHint'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -51,6 +57,27 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  exaSearchTitle: 'Exa web search',
+  exaSearchDescription: 'The Exa search provider.',
+  exaSearchApiKey: 'API key',
+  exaSearchApiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
+  exaSearchApiKeySet: 'A key is configured.',
+  exaSearchApiKeyUnset: 'No key is configured; search is unavailable until one is.',
+  exaSearchBaseUrl: 'Endpoint',
+  exaSearchBaseUrlHint: 'Leave blank to use the Exa API endpoint.',
+  exaSearchMode: 'Search mode',
+  exaSearchModeHint: 'Auto balances quality and latency; Fast and Instant prioritize speed.',
+  exaSearchModeAuto: 'Auto',
+  exaSearchModeFast: 'Fast',
+  exaSearchModeInstant: 'Instant',
+  exaSearchResults: 'Default results',
+  exaSearchResultsHint: 'Used only when the web-search tool does not provide a result bound.',
+  exaSearchModeration: 'Filter unsafe results',
+  exaSearchModerationHint: 'Ask Exa to exclude unsafe content.',
+  exaSearchHighlights: 'Excerpt limit (characters)',
+  exaSearchHighlightsHint: 'Leave blank to use Exa’s default focused excerpts.',
+  exaSearchFreshness: 'Maximum cached age (hours)',
+  exaSearchFreshnessHint: 'Leave blank for automatic retrieval; 0 fetches fresh content and -1 uses cache only.',
 }
 
 /** Simplified Chinese copy. */
@@ -92,4 +119,25 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  exaSearchTitle: 'Exa 网页搜索',
+  exaSearchDescription: 'Exa 搜索提供方。',
+  exaSearchApiKey: 'API Key',
+  exaSearchApiKeyHint: '不会写入设置文件。留空表示保留当前密钥。',
+  exaSearchApiKeySet: '已配置密钥。',
+  exaSearchApiKeyUnset: '未配置密钥；配置之前搜索不可用。',
+  exaSearchBaseUrl: '接口地址',
+  exaSearchBaseUrlHint: '留空则使用 Exa API 地址。',
+  exaSearchMode: '搜索模式',
+  exaSearchModeHint: '自动模式平衡质量和延迟；快速和即时模式优先速度。',
+  exaSearchModeAuto: '自动',
+  exaSearchModeFast: '快速',
+  exaSearchModeInstant: '即时',
+  exaSearchResults: '默认结果数',
+  exaSearchResultsHint: '仅在网页搜索工具未指定结果上限时使用。',
+  exaSearchModeration: '过滤不安全结果',
+  exaSearchModerationHint: '请求 Exa 排除不安全内容。',
+  exaSearchHighlights: '摘要上限（字符）',
+  exaSearchHighlightsHint: '留空则使用 Exa 默认的重点摘要。',
+  exaSearchFreshness: '缓存最大时效（小时）',
+  exaSearchFreshnessHint: '留空表示自动检索；0 获取最新内容，-1 仅使用缓存。',
 }

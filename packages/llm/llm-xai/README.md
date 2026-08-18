@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-xAI subscription provider for DeepSeek Harness. The plugin registers the `xai-oauth` model-auth driver and LLM route, signs in through xAI's device-code flow, stores the resulting OAuth credential through `ctx.modelAuth`, discovers chat-capable models from `/v1/language-models`, and sends requests through the OpenAI Responses protocol implemented by `@deepseek-ai/dsh-llm-pi-ai`.
+xAI subscription provider for DeepSeek Harness. The plugin registers the `xai-oauth` model-auth driver and LLM route, signs in through xAI's device-code flow, stores the resulting OAuth credential through `ctx.modelAuth`, discovers chat-capable models from `/v1/language-models`, and sends requests through the OpenAI Responses protocol implemented by `@deepseek-ai/dsh-llm-pi-ai`. At request time it reads durable images from the optional `ctx.attachments` service and forwards them through that shared transport.
 
 The login uses the public xAI client identity and scopes maintained by `@earendil-works/pi-ai`. Access tokens refresh before use after their refresh-skewed expiry. A 401 from model discovery forces one serialized refresh and one retry. Login cancellation aborts polling and settles only after the provider operation stops.
 
@@ -52,3 +52,4 @@ Completed assistant and tool content appends after the prior request prefix. Pro
 - xAI account and subscription eligibility are provider-controlled; a successful browser authorization may still be followed by an API authorization error.
 - A live catalog id with no pi-ai entry is offered as a reasoning model. A later non-reasoning xAI chat id keeps that selector until pi-ai catalogs it.
 - The device flow provides no account profile fields, so the signed-in card cannot display an email or subscription name.
+- Image content is refused when the durable attachment service is not mounted.

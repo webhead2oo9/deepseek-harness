@@ -9,6 +9,7 @@ import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
+import { ExaSearchCardController, type ExaSearchSettings } from '../src/client/exa-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
@@ -25,10 +26,10 @@ function acceptWrites<T>(host: StubSettingsScope<T>): void {
   })
 }
 
-function credentialsApi(configured: boolean) {
+function credentialsApi(configured: boolean, ref = 'DEEPSEEK_API_KEY') {
   const describe = vi.fn(() => Promise.resolve({
     rpcId: 'c-1' as never,
-    result: { ok: true as const, value: { credentials: { DEEPSEEK_API_KEY: { configured, writable: true } } } },
+    result: { ok: true as const, value: { credentials: { [ref]: { configured, writable: true } } } },
   }))
   const set = vi.fn(() => Promise.resolve({ rpcId: 'c-2' as never, result: { ok: true as const, value: {} } }))
   return { api: { credentials: { describe, set } } as never, describe, set }
@@ -537,6 +538,45 @@ describe('WebSearchCardController', () => {
 
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
     expect(credentials.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('ExaSearchCardController', () => {
+  it('projects Exa defaults and writes staged provider settings', async () => {
+    const host = stubSettingsScope<ExaSearchSettings>()
+    acceptWrites(host)
+    const credentials = credentialsApi(true, 'EXA_API_KEY')
+    const controller = new ExaSearchCardController(host.scope, credentials.api)
+    host.publish({
+      status: 'ready', writable: true, user: {}, base: {},
+      value: { baseURL: 'https://api.exa.ai', searchType: 'auto', moderation: true },
+    })
+    const face = controller.inject()
+    await vi.waitFor(() => { expect(face.hooks.exaSearchCard.getSnapshot().apiKeyConfigured).toBe(true) })
+
+    face.edit('searchType', 'fast')
+    face.edit('numResults', '12')
+    face.edit('moderation', 'false')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(3) })
+
+    expect(host.set.mock.calls).toEqual([
+      ['searchType', 'fast'], ['numResults', 12], ['moderation', false],
+    ])
+  })
+
+  it('writes the Exa credential through its own reference', async () => {
+    const host = stubSettingsScope<ExaSearchSettings>()
+    const credentials = credentialsApi(false, 'EXA_API_KEY')
+    const controller = new ExaSearchCardController(host.scope, credentials.api)
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const face = controller.inject()
+
+    face.edit('apiKey', 'exa-secret')
+    face.save()
+    await vi.waitFor(() => { expect(credentials.set).toHaveBeenCalled() })
+
+    expect(credentials.set).toHaveBeenCalledWith({ ref: 'EXA_API_KEY', value: 'exa-secret' })
   })
 })
 

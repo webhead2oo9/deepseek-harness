@@ -12,6 +12,12 @@
       "path": "../../util/launch-environment"
     },
     {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-DeepSeek Harness 的 xAI 订阅提供方。该插件注册 `xai-oauth` 模型认证驱动和 LLM 路由，通过 xAI 设备码流程登录，由 `ctx.modelAuth` 存储产生的 OAuth 凭据，从 `/v1/language-models` 发现可聊天模型，并通过 `@deepseek-ai/dsh-llm-pi-ai` 实现的 OpenAI Responses 协议发送请求。
+DeepSeek Harness 的 xAI 订阅提供方。该插件注册 `xai-oauth` 模型认证驱动和 LLM 路由，通过 xAI 设备码流程登录，由 `ctx.modelAuth` 存储产生的 OAuth 凭据，从 `/v1/language-models` 发现可聊天模型，并通过 `@deepseek-ai/dsh-llm-pi-ai` 实现的 OpenAI Responses 协议发送请求。请求时，它从可选的 `ctx.attachments` 服务读取持久图像，并通过该共享传输转发。
 
 登录使用 `@earendil-works/pi-ai` 维护的公开 xAI 客户端身份和权限范围。访问令牌达到包含提前量的过期时间后，会在使用前刷新。模型发现收到 401 时，会强制执行一次串行刷新并重试一次。取消登录会中止轮询，并在提供方操作停止后才完成。
 
@@ -52,3 +52,4 @@ xAI 提供的用量会被保留。该适配器不会估算未知或省略的用�
 - xAI 控制账户和订阅资格；浏览器授权成功后，API 仍可能返回授权错误。
 - 没有 pi-ai 条目的在线目录 ID 会被当作推理模型提供。若 xAI 随后发布不具备推理能力的新聊天 ID，在 pi-ai 编目之前仍会显示该选择器。
 - 设备流程不提供账户资料字段，因此已登录卡片无法显示邮箱或订阅名称。
+- 未挂载持久附件服务时，图像内容会被拒绝。

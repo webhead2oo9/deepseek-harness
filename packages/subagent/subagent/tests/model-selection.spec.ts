@@ -28,7 +28,13 @@ class MemorySettings extends SettingsProvider {
 const base = {
   allowDirectModelSelection: false,
   profiles: {
-    fast: { description: 'Fast work', provider: 'base-provider', model: 'fast-model' },
+    fast: {
+      description: 'Fast work',
+      provider: 'base-provider',
+      model: 'fast-model',
+      instruction: 'Prefer speed.',
+      reasoningEffort: 'low',
+    },
   },
 }
 
@@ -56,7 +62,13 @@ describe('subagent model selection settings', () => {
     expect(selected).toEqual({
       allowDirectModelSelection: true,
       profiles: {
-        fast: { description: 'Fast work', provider: 'base-provider', model: 'fast-model' },
+        fast: {
+          description: 'Fast work',
+          provider: 'base-provider',
+          model: 'fast-model',
+          instruction: 'Prefer speed.',
+          reasoningEffort: 'low',
+        },
         deep: {
           description: 'Deep work',
           provider: 'runinfraprovider',
@@ -69,6 +81,21 @@ describe('subagent model selection settings', () => {
     expect(updated).toHaveBeenCalled()
     ;(selected.profiles as Record<string, { model: string }>).deep!.model = 'mutated'
     expect(ctx.subagents.modelSelection().profiles['deep']?.model).toBe('reasoning-model')
+
+    await ctx.settings.replace(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      profiles: {
+        fast: {
+          description: 'Fast work',
+          provider: 'base-provider',
+          model: 'fast-model',
+          instruction: null,
+          reasoningEffort: null,
+        },
+      },
+    })
+    expect(ctx.subagents.modelSelection().profiles.fast).toEqual({
+      description: 'Fast work', provider: 'base-provider', model: 'fast-model',
+    })
     await ctx.fiber.dispose()
   })
 
@@ -111,5 +138,11 @@ describe('subagent model selection settings', () => {
       allowDirectModelSelection: false,
       profiles: { bad: { description: 'x', provider: 'p', model: 'm', reasoningEffort: ' ' } },
     }) }).toThrow('profile "bad" reasoningEffort must not be empty when present')
+    expect(() => {
+      validateSubagentModelSelectionSettings({
+        allowDirectModelSelection: false,
+        profiles: { reset: { description: 'x', provider: 'p', model: 'm', instruction: null, reasoningEffort: null } },
+      })
+    }).not.toThrow()
   })
 })

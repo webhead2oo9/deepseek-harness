@@ -1,14 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ModelAuthorization } from '@deepseek-ai/dsh-model-auth'
 import { ModelAuthError } from '@deepseek-ai/dsh-model-auth'
 import type { ModelAuth } from '@deepseek-ai/dsh-model-auth'
-import { LlmError } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmError } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { resolveXaiOptions } from '../src/index.ts'
 import { DEFAULT_XAI_REASONING_EFFORTS, XaiAdapter } from '../src/adapter.ts'
 import { XAI_OAUTH_PROVIDER } from '../src/auth.ts'
 
 const DEFAULT_REASONING_IDS = Object.keys(DEFAULT_XAI_REASONING_EFFORTS)
+
+const IMAGE_REF: ImageAttachmentRef = {
+  attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+  mediaType: 'image/png',
+  bytes: 3,
+  width: 1,
+  height: 1,
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -319,5 +329,59 @@ describe('xAI adapter discovery', () => {
     }))
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
     expect(network).toHaveBeenCalledOnce()
+  })
+
+  it('refuses image input without a durable attachment service', async () => {
+    const adapter = new XaiAdapter({
+      options: () => resolveXaiOptions({}), modelAuth: auth(), fetch: () => Promise.resolve(catalogResponse()),
+    })
+    await expect(collect(adapter.stream({
+      provider: XAI_OAUTH_PROVIDER, model: 'grok-4.5',
+      messages: [createUserMessage({
+        source: { kind: 'user' },
+        content: [{ type: 'image', attachment: IMAGE_REF }],
+      })],
+    }))).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CONTENT',
+      message: expect.stringMatching(/durable attachment service/),
+    })
+  })
+
+  it('loads durable images through the shared Responses transport', async () => {
+    const readImage = vi.fn(() => Promise.resolve({ ref: IMAGE_REF, data: Uint8Array.of(1, 2, 3) }))
+    const network = vi.fn(() => Promise.resolve(new Response(JSON.stringify({
+      error: { message: 'expected transport stop' },
+    }), { status: 401, headers: { 'content-type': 'application/json' } })))
+    vi.stubGlobal('fetch', network)
+    const adapter = new XaiAdapter({
+      options: () => resolveXaiOptions({}),
+      modelAuth: auth(),
+      fetch: () => Promise.resolve(catalogResponse()),
+      resolveAttachments: () => ({ readImage }) as unknown as AttachmentStore,
+    })
+    const chunks = await collect(adapter.stream({
+      provider: XAI_OAUTH_PROVIDER, model: 'grok-4.5',
+      messages: [createUserMessage({
+        source: { kind: 'user' },
+        content: [{ type: 'image', attachment: IMAGE_REF }],
+      })],
+    }))
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    expect(readImage).toHaveBeenCalledWith(IMAGE_REF)
+    expect(network).toHaveBeenCalledOnce()
+    const init = network.mock.calls[0]?.[1] as RequestInit
+    if (typeof init.body !== 'string') throw new Error('xAI request body was not serialized JSON')
+    expect(JSON.parse(init.body)).toEqual(expect.objectContaining({
+      input: expect.arrayContaining([
+        expect.objectContaining({
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'input_image',
+              image_url: 'data:image/png;base64,AQID',
+            }),
+          ]),
+        }),
+      ]),
+    }))
   })
 })

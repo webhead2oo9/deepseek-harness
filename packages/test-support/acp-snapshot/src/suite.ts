@@ -129,6 +129,12 @@ export interface Scenario {
    */
   pinsChildSystemPrompts?: readonly number[]
   /**
+   * Child fixture indices whose request config legitimately differs from the
+   * parent header class. The complete config sequence stays in that child's
+   * `session.<n>.jsonl`; every other header field still comes from the class pin.
+   */
+  pinsChildRequestConfigs?: readonly number[]
+  /**
    * How many changed `request/header` snapshots this PINNING scenario's primary
    * fixture legitimately carries (default 0). Their full prompt text is kept in
    * the readable Markdown pin; any other count fails. Meaningless off the pin.
@@ -392,6 +398,18 @@ export function normalizedHeaders(rawLog: string, ctx: NormalizeContext): unknow
     .map(line => JSON.parse(line) as { type?: unknown; data?: { header?: unknown } })
     .filter(record => record.type === 'request/header')
     .map(record => record.data?.header)
+}
+
+/**
+ * The request config carried by every normalized request header, preserving an
+ * undefined entry for a malformed header or a missing config.
+ *
+ * @param rawLog The session `.jsonl` content to inspect.
+ * @param ctx The volatile values of the run that produced it.
+ * @returns One config value per request header, in log order.
+ */
+export function normalizedRequestConfigs(rawLog: string, ctx: NormalizeContext): unknown[] {
+  return normalizedHeaders(rawLog, ctx).map(header => isRecord(header) ? header.config : undefined)
 }
 
 /**
@@ -1217,6 +1235,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
 
         const childSchemaPins = new Set(scenario.pinsChildToolSchemas ?? [])
         const childPromptPins = new Set(scenario.pinsChildSystemPrompts ?? [])
+        const childConfigPins = new Set(scenario.pinsChildRequestConfigs ?? [])
 
         // Record writes live model fixtures; keyless refresh writes every comparable replayed
         // fixture. Pinning JSONL keeps prefixes but moves prompts and schemas into sidecars.
@@ -1384,8 +1403,17 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
             await readFile(join(dir, childSystemPromptSnapshot(index)), 'utf8'),
           )
         }
+        const childPinnedConfigs = new Map<number, unknown[]>()
+        for (const index of childConfigPins) {
+          const fixtureFile = fixtureFiles[index]
+          expect(fixtureFile, `no child session fixture at index ${index} to pin request config from`)
+            .toBeDefined()
+          const fixture = await readFile(join(dir, fixtureFile as string), 'utf8')
+          childPinnedConfigs.set(index, normalizedRequestConfigs(fixture, fixtureContext(fixture)))
+        }
         for (const [logIndex, log] of result.sessionLogs.entries()) {
           const childSchemas = childPinnedSchemas.get(logIndex)
+          const childConfigs = childPinnedConfigs.get(logIndex)
           const expectedChanges = scenario.pinsHeader === true && logIndex === 0
             ? scenario.expectedHeaderChanges ?? 0
             : 0
@@ -1402,11 +1430,17 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
             expect(childSchemas.length, `session ${log.id}: ${childToolSchemasSnapshot(logIndex)} has an unexpected tool-schema count`)
               .toBe(schemaSets.length)
           }
+          if (childConfigs !== undefined) {
+            expect(childConfigs.length, `session ${log.id}: pinned child request-config sequence has an unexpected length`)
+              .toBe(headers.length)
+          }
           for (const [k, header] of headers.entries()) {
             const classPin = expectedChanges > 0 ? pinnedHeaders[k] : pinnedHeaders[0]
-            const expected = childSchemas === undefined
-              ? classPin
-              : { ...classPin as Record<string, unknown>, tools: childSchemas[k] }
+            const expected = {
+              ...classPin as Record<string, unknown>,
+              ...childSchemas === undefined ? {} : { tools: childSchemas[k] },
+              ...childConfigs === undefined ? {} : { config: childConfigs[k] },
+            }
             expect(header, `session ${log.id}: request/header #${k + 1} diverged from the pinned (${pinningScenario.name}) header`)
               .toEqual(expected)
             if (expectedChanges === 0) {
@@ -1545,7 +1579,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
       assertUniqueSnapshotContents('tool-schema', schemas)
     })
 
-    it('every declared child sidecar is canonical and names a real child', async () => {
+    it('every declared child header pin is canonical and names a real child', async () => {
       for (const scenario of scenarios) {
         const dir = join(snapshotsDir, scenario.name)
         const files = await sessionFixtures(dir)
@@ -1569,6 +1603,16 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           const promptSource = promptSourceByClass.get(classOf(scenario)) ?? scenario
           const classPin = await readFile(join(snapshotsDir, promptSource.name, SYSTEM_PROMPT_SNAPSHOT), 'utf8')
           assertChildSystemPromptSnapshot(sidecar, initialSystemPromptSnapshot(classPin), `${scenario.name}/${file}`)
+        }
+        for (const index of scenario.pinsChildRequestConfigs ?? []) {
+          expect(files[index], `${scenario.name}: child request-config pin ${index} must name an existing session.<n>.jsonl fixture`)
+            .toBeDefined()
+          const fixture = await readFile(join(dir, files[index] as string), 'utf8')
+          const configs = normalizedRequestConfigs(fixture, fixtureContext(fixture))
+          expect(configs.length, `${scenario.name}: child request-config pin ${index} must pin at least one request`)
+            .toBeGreaterThan(0)
+          expect(configs, `${scenario.name}: child request-config pin ${index} contains a missing config`)
+            .not.toContain(undefined)
         }
       }
     })

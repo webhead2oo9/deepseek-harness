@@ -20,6 +20,7 @@ import {
   headerChangeCount,
   formatToolSchemasSnapshot,
   normalizedHeaders,
+  normalizedRequestConfigs,
   normalizedSystemPrompts,
   normalizedToolSchemas,
   parseToolSchemasSnapshot,
@@ -87,6 +88,7 @@ const REPLAY_SCENARIOS: Scenario[] = [
     workspaceParent: tmpdir(),
     pinsChildToolSchemas: [1],
     pinsChildSystemPrompts: [1],
+    pinsChildRequestConfigs: [1],
     prepareWorkspace: (cwd) => {
       writeFileSync(join(cwd, 'seed.txt'), 'prepared at runtime')
     },
@@ -575,6 +577,23 @@ describe('normalizedToolSchemas', () => {
     ].join('\n')
     expect(normalizedToolSchemas(log, { sessionIds: [], cwd: '/w' })).toEqual([
       [{ name: 'read', description: 'work in {{cwd}}' }],
+    ])
+  })
+})
+
+describe('normalizedRequestConfigs', () => {
+  it('preserves one entry per header and exposes missing configs', () => {
+    const log = [
+      '{"type":"session","id":"a","createdAt":5,"cwd":"/w"}',
+      '{"type":"request/header","seq":0,"time":9,"data":{"header":{"config":{"model":"child"}}}}',
+      '{"type":"request/header","seq":1,"time":9,"data":{"header":{}}}',
+      '{"type":"request/header","seq":2,"time":9,"data":{"header":null}}',
+      '',
+    ].join('\n')
+    expect(normalizedRequestConfigs(log, { sessionIds: [], cwd: '/w' })).toEqual([
+      { model: 'child' },
+      undefined,
+      undefined,
     ])
   })
 })

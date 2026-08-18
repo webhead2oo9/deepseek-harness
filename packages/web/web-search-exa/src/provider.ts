@@ -1,8 +1,8 @@
 /**
- * `ExaSearchProvider`: a `WebSearchProvider` backed by the Exa search API (`POST /search` with
- * highlight contents). It maps the first non-blank highlight to `snippet`, maps
- * `publishedDate` to `publishedAt`, drops entries without a snippet, and omits `content`
- * because Exa returns no generated answer.
+ * Exa-backed `WebSearchProvider`: resolves credentials per operation, calls
+ * `POST /search` without following redirects, validates external JSON, and
+ * maps Exa result metadata and highlights into the provider-neutral web result.
+ *
  * @module @deepseek-ai/dsh-web-search-exa/provider
  */
 
@@ -13,110 +13,126 @@ import type {
   WebSearchResult,
   WebSearchSource,
 } from '@deepseek-ai/dsh-web'
-import type { ExaError, ExaResult, ExaSearchResponse } from './types.ts'
+import type { ExaError, ExaResult, ExaSearchRequest, ExaSearchResponse, ExaSearchType } from './types.ts'
 
 /** Stable id this provider registers under. */
 export const EXA_PROVIDER_ID = 'exa'
 
-/** Default Exa search endpoint; `/search` is the operation. */
+/** Default Exa endpoint base; `/search` is appended. */
 export const EXA_DEFAULT_BASE_URL = 'https://api.exa.ai'
 
-/** Default retrieval mode: let Exa pick between keyword and neural search. */
-export const EXA_DEFAULT_SEARCH_TYPE = 'auto'
+/** Balanced Exa retrieval mode used unless configuration selects another. */
+export const EXA_DEFAULT_SEARCH_TYPE: ExaSearchType = 'auto'
 
-/** Default number of highlight sentences requested per result. */
-export const EXA_DEFAULT_HIGHLIGHTS_PER_RESULT = 1
+/** Exa moderation is enabled by default for the shipped provider. */
+export const EXA_DEFAULT_MODERATION = true
 
-/** Attribution header sent on every request. Bump with the package version. */
+/** Attribution header sent on every request. */
 const USER_AGENT = 'deepseek-harness/0.0.1'
 
-/** Resolved provider options (the plugin's `apply` supplies env-var and constant defaults). */
+/** Resolved options for one Exa search operation. */
 export interface ExaSearchProviderOptions {
-  /** Exa API key. Empty/absent makes the provider unavailable. */
-  apiKey: string
+  /** Literal key for configuration compatibility; prefer {@link resolveApiKey}. */
+  apiKey?: string
+  /** Resolve the current credential for each operation. */
+  resolveApiKey?: () => Promise<string | undefined>
+  /** Credential reference named in a missing-key diagnostic. */
+  apiKeyEnv?: string
   /** Endpoint base; `/search` is appended. */
   baseURL: string
-  /** Retrieval mode sent as Exa's `type`. */
-  searchType: 'auto' | 'keyword' | 'neural'
+  /** Standard Exa retrieval mode. */
+  searchType: ExaSearchType
   /** Default result count when a request carries no `maxResults`. */
   numResults?: number
-  /** Highlight sentences requested per result (Exa's `highlightsPerUrl`). */
-  highlightsPerResult: number
+  /** Whether Exa filters unsafe results. */
+  moderation: boolean
+  /** Optional per-result highlight character budget. */
+  highlightsMaxCharacters?: number
+  /** Optional maximum cached-content age; `0` fetches fresh and `-1` is cache-only. */
+  maxAgeHours?: number
 }
 
 /**
- * Map one Exa result to a normalized source, or `undefined` when it carries no
- * portable snippet (an entry with no highlight is dropped — the seam has no
- * other field to derive a snippet from, and inventing one would lie).
- *
- * @param result - one entry of Exa's `results[]`.
- * @returns the normalized source, or `undefined` when the entry has no
- *   non-blank highlight.
+ * Map one validated Exa result to the provider-neutral source fields.
+ * Results without highlights remain useful citations because the shared type
+ * permits a URL and title without a snippet.
+ * @param result - one validated Exa result.
+ * @returns the normalized source.
  */
-export function mapExaResult(result: ExaResult): WebSearchSource | undefined {
+export function mapExaResult(result: ExaResult): WebSearchSource {
   const snippet = result.highlights?.find(highlight => highlight.trim().length > 0)
-  if (snippet === undefined) return undefined
   return {
     url: result.url,
-    ...result.title != null && result.title.length > 0 ? { title: result.title } : {},
-    snippet,
-    ...result.publishedDate != null && result.publishedDate.length > 0 ? { publishedAt: result.publishedDate } : {},
+    ...typeof result.title === 'string' && result.title.length > 0 ? { title: result.title } : {},
+    ...snippet !== undefined ? { snippet } : {},
+    ...typeof result.publishedDate === 'string' && result.publishedDate.length > 0
+      ? { publishedAt: result.publishedDate }
+      : {},
   }
 }
 
 /**
- * Map an Exa response envelope to a normalized search result.
- *
- * @param response - the parsed `POST /search` response body.
- * @returns the normalized result; snippet-less entries are dropped
- *   ({@link mapExaResult}).
+ * Map a validated Exa envelope into the shared search result.
+ * @param response - validated `POST /search` response.
+ * @returns normalized sources; Exa supplies no generated answer in standard modes.
  */
 export function mapExaResponse(response: ExaSearchResponse): WebSearchResult {
-  const sources = (response.results ?? [])
-    .map(mapExaResult)
-    .filter((source): source is WebSearchSource => source !== undefined)
-  // Exa returns no generated answer, so `content` is omitted. The web service owns the
-  // final `maxResults` truncation, so this provider reports `truncated: false`.
-  return { sources, truncated: false }
+  return { sources: response.results.map(mapExaResult), truncated: false }
 }
 
-/** The Exa-backed search provider; HTTP redirects fail as `WEB_PROVIDER_ERROR`. */
+/** Exa-backed provider; settings are snapshotted once at operation entry. */
 export class ExaSearchProvider implements WebSearchProvider {
   readonly id = EXA_PROVIDER_ID
 
-  constructor(private readonly options: ExaSearchProviderOptions) {}
+  /** @param resolveOptions - current settings projected for the next operation. */
+  constructor(private readonly resolveOptions: () => ExaSearchProviderOptions) {}
 
   available(): boolean {
-    return this.options.apiKey.length > 0
-      && isValidBaseUrl(this.options.baseURL)
-      && isPositiveInteger(this.options.highlightsPerResult)
-      && (this.options.numResults === undefined || isPositiveInteger(this.options.numResults))
+    const options = this.resolveOptions()
+    return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined)
+      && URL.canParse(options.baseURL)
+      && isSearchType(options.searchType)
+      && (options.numResults === undefined || isIntegerInRange(options.numResults, 1, 100))
+      && (options.highlightsMaxCharacters === undefined
+        || isIntegerInRange(options.highlightsMaxCharacters, 1, 10_000))
+      && (options.maxAgeHours === undefined || isIntegerInRange(options.maxAgeHours, -1, 720))
   }
 
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
-    // A per-request bound wins over the configured default; either may be absent.
-    const numResults = request.maxResults ?? this.options.numResults
+    const options = this.resolveOptions()
+    const apiKey = await this.apiKey(options, signal)
+    throwIfSearchAborted(signal)
+    const numResults = request.maxResults ?? options.numResults
+    const contents: ExaSearchRequest['contents'] = {
+      highlights: options.highlightsMaxCharacters === undefined
+        ? true
+        : { maxCharacters: options.highlightsMaxCharacters },
+      ...options.maxAgeHours === undefined ? {} : { maxAgeHours: options.maxAgeHours },
+    }
+    const body: ExaSearchRequest = {
+      query: request.query,
+      type: options.searchType,
+      moderation: options.moderation,
+      contents,
+      ...numResults === undefined ? {} : { numResults },
+    }
+
     let response: Response
     try {
-      response = await fetch(`${this.options.baseURL}/search`, {
+      response = await fetch(`${options.baseURL}/search`, {
         method: 'POST',
         redirect: 'error',
         headers: {
-          'authorization': `Bearer ${this.options.apiKey}`,
+          'x-api-key': apiKey,
           'content-type': 'application/json',
           'accept': 'application/json',
           'user-agent': USER_AGENT,
         },
-        body: JSON.stringify({
-          query: request.query,
-          type: this.options.searchType,
-          contents: { highlights: { highlightsPerUrl: this.options.highlightsPerResult } },
-          ...numResults !== undefined ? { numResults } : {},
-        }),
-        ...signal !== undefined ? { signal } : {},
+        body: JSON.stringify(body),
+        ...signal === undefined ? {} : { signal },
       })
     } catch (error: unknown) {
-      if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       throw new WebError(`Exa search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
 
@@ -126,40 +142,114 @@ export class ExaSearchProvider implements WebSearchProvider {
       try {
         const parsed = await response.json() as ExaError
         const detail = parsed.error ?? parsed.message
-        if (detail !== undefined && detail.length > 0) message = detail
+        if (typeof detail === 'string' && detail.length > 0) message = detail
       } catch (error: unknown) {
-        // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
-        // into a generic HTTP-error message — cancellation is not a provider
-        // error (the seam's cancellation contract).
-        if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
-        // Otherwise: the HTTP status is already captured in `message` above; a
-        // malformed/non-JSON error body (normal for gateway 5xx/429s) can only
-        // cost a richer provider message, never the real error.
+        if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       }
       throw new WebError(message, 'WEB_PROVIDER_ERROR')
     }
 
     try {
-      const payload = await response.json() as ExaSearchResponse
-      return mapExaResponse(payload)
+      return mapExaResponse(parseExaResponse(await response.json()))
     } catch (error: unknown) {
-      if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
-      throw new WebError(`Exa returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      if (error instanceof WebError) throw error
+      throw new WebError(`Exa returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', {
+        cause: error,
+      })
     }
+  }
+
+  /** Resolve one operation's credential without retaining it on the provider. */
+  private async apiKey(options: ExaSearchProviderOptions, signal?: AbortSignal): Promise<string> {
+    throwIfSearchAborted(signal)
+    if (options.apiKey !== undefined && options.apiKey.length > 0) return options.apiKey
+    let resolved: string | undefined
+    try {
+      resolved = await abortable(options.resolveApiKey?.() ?? Promise.resolve(undefined), signal)
+    } catch (error: unknown) {
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      throw new WebError(`Exa credential resolution failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+    }
+    if (resolved !== undefined && resolved.length > 0) return resolved
+    const ref = options.apiKeyEnv ?? 'EXA_API_KEY'
+    throw new WebError(
+      `Exa search has no API key for "${ref}"; store it through the credentials service, export it in the launching environment, or set a literal "apiKey" in the web-search-exa config`,
+      'WEB_PROVIDER_CREDENTIAL_MISSING',
+    )
   }
 }
 
-/** True when `baseURL` parses as an absolute URL (a cheap local config check). */
-function isValidBaseUrl(baseURL: string): boolean {
-  return URL.canParse(baseURL)
+/** Validate the external response fields the mapper reads. */
+function parseExaResponse(value: unknown): ExaSearchResponse {
+  if (!isRecord(value) || !Array.isArray(value.results)) throw new TypeError('expected an object with results[]')
+  return { results: value.results.map((entry, index) => parseExaResult(entry, index)) }
 }
 
-/** True for a request limit that can be sent to Exa (a positive whole number). */
-function isPositiveInteger(value: number): boolean {
-  return Number.isInteger(value) && value > 0
+/** Validate one external result without retaining provider-private fields. */
+function parseExaResult(value: unknown, index: number): ExaResult {
+  if (!isRecord(value) || typeof value.url !== 'string' || value.url.length === 0) {
+    throw new TypeError(`results[${index}].url must be a non-empty string`)
+  }
+  if (value.title !== undefined && value.title !== null && typeof value.title !== 'string') {
+    throw new TypeError(`results[${index}].title must be a string`)
+  }
+  if (value.publishedDate !== undefined && value.publishedDate !== null && typeof value.publishedDate !== 'string') {
+    throw new TypeError(`results[${index}].publishedDate must be a string`)
+  }
+  if (value.highlights !== undefined
+    && (!Array.isArray(value.highlights) || value.highlights.some(item => typeof item !== 'string'))) {
+    throw new TypeError(`results[${index}].highlights must be a string array`)
+  }
+  return {
+    url: value.url,
+    ...typeof value.title === 'string' ? { title: value.title } : {},
+    ...typeof value.publishedDate === 'string' ? { publishedDate: value.publishedDate } : {},
+    ...Array.isArray(value.highlights) ? { highlights: value.highlights as string[] } : {},
+  }
 }
 
-/** True for a fetch/`AbortSignal` abort, surfaced as `WEB_ABORTED`. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSearchType(value: string): value is ExaSearchType {
+  return value === 'auto' || value === 'fast' || value === 'instant'
+}
+
+function isIntegerInRange(value: number, min: number, max: number): boolean {
+  return Number.isInteger(value) && value >= min && value <= max
+}
+
+function abortable<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined) return operation
+  if (signal.aborted) return Promise.reject(searchAborted(signal))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => { reject(searchAborted(signal)) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void operation.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(new Error(String(error).replace(/^Error: /u, ''), { cause: error }))
+      },
+    )
+  })
+}
+
+function throwIfSearchAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw searchAborted(signal)
+}
+
+function searchAborted(signal?: AbortSignal, fallback?: unknown): WebError {
+  return new WebError('Exa search aborted', 'WEB_ABORTED', {
+    cause: signal?.aborted === true ? signal.reason : fallback,
+  })
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }

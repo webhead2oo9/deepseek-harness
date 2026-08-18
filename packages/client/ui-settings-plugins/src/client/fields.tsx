@@ -88,6 +88,76 @@ export function ValueField(props: FieldProps & {
 }
 
 /**
+ * A staged select field.
+ * @param props - the field state, actions, and allowed values.
+ * @returns the labelled select control.
+ */
+export function SelectField(props: FieldProps & { options: readonly { value: string; label: string }[] }) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <span className={css.badge}>{props.overriddenLabel}</span>
+              <button type="button" className={css.reset} disabled={props.disabled} onClick={props.onReset}>
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <select
+        id={props.id}
+        className={props.invalid ? css.inputInvalid : css.input}
+        value={props.text}
+        disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}
+      >
+        {props.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <p className={props.invalid ? css.invalid : css.hint}>{props.invalid ? props.invalidLabel : props.hint}</p>
+    </div>
+  )
+}
+
+/**
+ * A staged boolean field.
+ * @param props - the field state and edit action.
+ * @returns the labelled checkbox control.
+ */
+export function ToggleField(props: FieldProps) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <span className={css.badge}>{props.overriddenLabel}</span>
+              <button type="button" className={css.reset} disabled={props.disabled} onClick={props.onReset}>
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <label className={css.toggle} htmlFor={props.id}>
+        <input
+          id={props.id}
+          type="checkbox"
+          checked={props.text === 'true'}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(event.target.checked ? 'true' : 'false') }}
+        />
+      </label>
+      <p className={css.hint}>{props.hint}</p>
+    </div>
+  )
+}
+
+/**
  * A write-only credential control. The value never rides a response, so the
  * control reports only whether one is configured and starts blank; a blank
  * draft writes nothing, which keeps the stored key rather than clearing it.

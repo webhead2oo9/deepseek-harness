@@ -38,7 +38,7 @@ The service registers `subagent-model-selection` when `ctx.settings` exists. Com
 
 | Key | Meaning |
 |---|---|
-| `profiles` | Dictionary of model-facing names to `{ description, provider, model, instruction?, reasoningEffort? }`. Names and required fields must be non-empty; provider/model values are opaque and may name an external adapter. The optional instruction is a child-only system-prompt section; the optional reasoning effort is an opaque adapter-owned id validated by the exact model route. |
+| `profiles` | Dictionary of model-facing names to `{ description, provider, model, instruction?, reasoningEffort? }`. Names and required fields must be non-empty; provider/model values are opaque and may name an external adapter. The optional instruction is a child-only system-prompt section; the optional reasoning effort is an opaque adapter-owned id validated by the exact model route. A persisted user profile may set either optional field to `null` to clear an inherited composition value; `modelSelection()` removes these reset markers from its returned profiles. |
 | `allowDirectModelSelection` | Whether compatible delegation tools expose direct provider/model arguments; default `false`. |
 
 A committed settings change emits `subagent/model-selection-updated`; consumers re-read `modelSelection()` instead of retaining settings-owned objects. Without a settings provider, composition config remains authoritative. The [model profiles Agent Note](../../../.agents/notes/implemented/feature/2026-08-17-subagent-model-profiles.md) owns the resolution and durability rationale.

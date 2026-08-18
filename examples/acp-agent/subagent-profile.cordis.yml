@@ -1,0 +1,19 @@
+# Add one composition-owned profile to the real ACP example. The profile uses
+# another advertised DeepSeek route, installs a child-only instruction, and
+# selects a non-default reasoning effort.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: subagent
+        name: '@deepseek-ai/dsh-subagent'
+        config:
+          allowDirectModelSelection: false
+          profiles:
+            deliberate:
+              description: Delegate exacting work to the pro model.
+              provider: deepseek-official
+              model: deepseek-v4-pro
+              instruction: Check every claim before answering.
+              reasoningEffort: max

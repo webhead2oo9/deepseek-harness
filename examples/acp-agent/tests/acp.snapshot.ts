@@ -66,6 +66,7 @@ const BACKGROUND_TASK_ADMISSION_CONFIG = fileURLToPath(
 )
 const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
 const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
+const SUBAGENT_PROFILE_CONFIG = fileURLToPath(new URL('../subagent-profile.cordis.yml', import.meta.url))
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
@@ -396,6 +397,18 @@ const SCENARIOS: Scenario[] = [
   // Windows bash process-tree kill is deferred with the Bash execution domain.
   { name: 'cancel-tool-calls', hasModelTurn: true, recorded: false, overridden: true, posixOnly: true },
   { name: 'subagent-spawn-in-process', hasModelTurn: true, recorded: true },
+  {
+    name: 'subagent-profile-routing',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'subagent-profile',
+    systemPromptSource: 'text-turn',
+    pinsChildSystemPrompts: [1],
+    pinsChildRequestConfigs: [1],
+    configPath: SUBAGENT_PROFILE_CONFIG,
+  },
   // Keyless authored scenario: the child ends at max-tokens with an empty
   // usage-only assistant/message after earlier text and a tool call. The
   // parent's tool result must retain that assistant output and stop reason.

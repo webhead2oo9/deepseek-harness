@@ -14,6 +14,8 @@ import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
 import { BashCard } from '../src/client/BashCard.tsx'
 import type { BashCardProps } from '../src/client/BashCard.tsx'
 import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx'
+import { ExaSearchCard } from '../src/client/ExaSearchCard.tsx'
+import type { ExaSearchCardProps } from '../src/client/ExaSearchCard.tsx'
 import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
@@ -23,6 +25,7 @@ import type { AgentLoopCardState } from '../src/client/agent-loop-card-controlle
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
 import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
+import type { ExaSearchCardState } from '../src/client/exa-card-controller.ts'
 import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -415,5 +418,37 @@ describe('WebSearchCard', () => {
       ['maxUses', '4'],
     ])
     expect(actions.resetField.mock.calls).toEqual([['baseURL'], ['maxUses']])
+  })
+})
+
+describe('ExaSearchCard', () => {
+  it('renders staged provider controls without exposing the API key', () => {
+    const store = createSnapshotStore<ExaSearchCardState>({
+      ...settled,
+      baseURL: field('https://api.exa.ai'),
+      searchType: field('auto'),
+      numResults: field('10'),
+      moderation: field('true'),
+      highlightsMaxCharacters: field(''),
+      maxAgeHours: field(''),
+      apiKey: field(''),
+      apiKeyConfigured: true,
+      apiKeyWritable: true,
+    })
+    const actions = cardActions()
+    const props = { ...actions, t, useExaSearchCard: bindSnapshotSelector(store) } as unknown as ExaSearchCardProps
+    render(<ExaSearchCard {...props} />)
+
+    fireEvent.click(screen.getByText(en.exaSearchTitle))
+
+    expect(screen.getByText(en.exaSearchApiKeySet)).toBeTruthy()
+    expect(screen.getByLabelText(en.exaSearchApiKey)).toHaveProperty('type', 'password')
+    expect(screen.getByLabelText(en.exaSearchMode)).toHaveProperty('value', 'auto')
+    expect(screen.getByLabelText(en.exaSearchModeration)).toHaveProperty('checked', true)
+
+    fireEvent.change(screen.getByLabelText(en.exaSearchMode), { target: { value: 'fast' } })
+    fireEvent.click(screen.getByLabelText(en.exaSearchModeration))
+
+    expect(actions.edit.mock.calls).toEqual([['searchType', 'fast'], ['moderation', 'false']])
   })
 })

@@ -82,9 +82,11 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
         description: draft.description,
         provider: draft.provider,
         model: draft.model,
-        ...draft.instruction.trim().length === 0 ? {} : { instruction: draft.instruction },
+        ...draft.instruction.trim().length === 0
+          ? draft.base === true ? { instruction: null } : {}
+          : { instruction: draft.instruction },
         ...draft.reasoningEffort.trim().length === 0
-          ? {}
+          ? draft.base === true ? { reasoningEffort: null } : {}
           : { reasoningEffort: draft.reasoningEffort.trim() },
       },
       draft.original,
@@ -114,8 +116,8 @@ export function SubagentsSection(props: SubagentsSectionProps): ReactNode {
             {base && <small>{props.t(overridden ? 'customizedDefault' : 'deploymentDefault')}</small>}
           </div>
           <p>{profile.description}</p>
-          <code>{profile.provider} / {profile.model}{profile.reasoningEffort === undefined ? '' : ` · ${profile.reasoningEffort}`}</code>
-          {profile.instruction !== undefined && <p className={css.instructionPreview}><strong>{props.t('instructionConfigured')}</strong> {profile.instruction}</p>}
+          <code>{profile.provider} / {profile.model}{typeof profile.reasoningEffort === 'string' ? ` · ${profile.reasoningEffort}` : ''}</code>
+          {typeof profile.instruction === 'string' && <p className={css.instructionPreview}><strong>{props.t('instructionConfigured')}</strong> {profile.instruction}</p>}
         </div>
         <div className={css.actions}>
           <Button variant="outline" disabled={disabled} aria-label={`${props.t('edit')} ${name}`} onClick={() => { openEdit(name, profile) }}>{props.t('edit')}</Button>

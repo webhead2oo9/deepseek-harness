@@ -2,41 +2,38 @@
 
 English | [中文](README.zh.md)
 
-An [Exa](https://exa.ai)-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It calls Exa's `POST /search` endpoint with highlight contents and maps the flat `results[]` into the seam's normalized `WebSearchResult`.
+An [Exa](https://exa.ai)-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It calls Exa `POST /search` with focused highlights and maps result metadata into `WebSearchResult`.
 
-This is an **implementation** package: it registers a provider into `ctx.web`, it does not own the `ctx.web` key and it does not register a model-facing tool (that is `@deepseek-ai/dsh-tool-web`). Like `@deepseek-ai/dsh-llm-deepseek`, it is a function/namespace plugin (`inject: ['web']`) that registers its backend, not a default-export service.
+This implementation package registers a backend into `ctx.web`; [`@deepseek-ai/dsh-tool-web`](../tool-web/README.md) owns the model-facing `web_search` tool.
 
 ## Config
 
 | Key | Default | Meaning |
 |---|---|---|
-| `apiKey` | `$EXA_API_KEY` | Exa API key. Empty/absent makes the provider unavailable. |
-| `baseURL` | `https://api.exa.ai` | Endpoint base; `/search` is appended. An unparseable value makes the provider unavailable. |
-| `searchType` | `auto` | Retrieval mode sent as Exa's `type`: `auto` (Exa decides), `keyword`, or `neural`. |
-| `numResults` | (unset) | Default result count when a request carries no `maxResults`. Unset sends no default. Must be a positive integer. |
-| `highlightsPerResult` | `1` | Highlight sentences requested per result (Exa's `highlightsPerUrl`). Must be a positive integer. |
+| `apiKey` | — | Literal secret for compatibility. Prefer `apiKeyEnv`. |
+| `apiKeyEnv` | `EXA_API_KEY` | Credential reference resolved for every search. |
+| `baseURL` | `https://api.exa.ai` | Exa endpoint base; `/search` is appended. |
+| `searchType` | `auto` | Standard retrieval mode: `auto`, `fast`, or `instant`. |
+| `numResults` | unset | Default only when the shared request has no `maxResults`. |
+| `moderation` | `true` | Ask Exa to filter unsafe results. |
+| `highlightsMaxCharacters` | unset | Per-result excerpt character budget; unset uses Exa’s default selection. |
+| `maxAgeHours` | unset | Cached-content age: `0` fetches fresh content and `-1` uses cache only. |
 
-```yaml
-- id: web-search-exa
-  name: '@deepseek-ai/dsh-web-search-exa'
-  config:
-    apiKey: !!js process.env.EXA_API_KEY
-```
+The provider registers the `web-search-exa` settings namespace. The Plugins page writes the API key through the credentials domain, so no secret is returned through settings responses.
 
 ## Mapping
 
-Exa returns a flat `results[]` and no generated answer, so `content` is omitted. Each result maps to a `WebSearchSource`: `url` ← `url`, `title` ← `title`, `snippet` ← the first non-empty `highlights[]` entry (a result with no highlight has no portable snippet and is dropped), `publishedAt` ← `publishedDate`. A request's `maxResults` wins over the configured `numResults` default and is sent as Exa's `numResults` for a cost/latency optimization; the final bound is enforced by the seam. Provider failures (HTTP errors, network failure, unparseable or wrong-shape bodies) surface as `WebError` `WEB_PROVIDER_ERROR`; an aborted request surfaces as `WEB_ABORTED`. HTTP redirects are rejected before the `Location` target is contacted and surface as `WEB_PROVIDER_ERROR`.
+Each Exa result contributes its URL, optional title, first non-blank highlight, and publication date. A result without a highlight remains a usable citation. The web capability applies the final result bound. Credential-bearing requests reject redirects before following `Location`; cancelled operations return `WEB_ABORTED`.
 
 ## Model Experience
 
-Indirectly, through [`dsh-tool-web`](../tool-web/README.md), which retains this provider's `maxResults`-bounded URLs, titles, first highlights, and publication dates or its exact `Exa search aborted`, `Exa search request failed: <error>`, and `Exa returned an unprocessable response body: <error>` failures under the consumer's error wrapper while generated answers and provider-private fields remain outside context.
+`dsh-tool-web` provides the model-visible tool. It receives normalized, bounded sources and provider failures; Exa response fields not mapped into the shared result remain outside model context.
 
 #### KV Cache effect
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+No direct invalidation; the web-tool consumer owns request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-- **A result with no non-blank highlight is dropped entirely** — no portable snippet to map, so fewer sources than the requested count can return.
-- **Only `searchType`/`numResults`/`highlightsPerResult` are exposed** — Exa's other controls (livecrawl, category, domain/date filters, full-text contents) wait on provider-neutral Service Definition fields ([seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)).
-- **Abort classification is error-shape-based** — only a `DOMException` named `AbortError` maps to `WEB_ABORTED`; an abort carrying a custom reason (e.g. `dsh-timeout`'s `TimeoutReason`) surfaces as `WEB_PROVIDER_ERROR`.
+- The provider supports ordinary Exa retrieval modes only. Deep research, synthesis, and streaming require a separate model-facing capability.
+- Category, domain, date, and page-content controls remain outside the provider-neutral request because current providers cannot honor one shared meaning for them.

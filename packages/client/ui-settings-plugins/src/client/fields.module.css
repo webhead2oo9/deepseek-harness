@@ -71,6 +71,18 @@
   cursor: default;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
 .input {
   height: 34px;
   padding: 0 12px;

@@ -38,7 +38,7 @@ subagent seam 允许一个 agent（智能体）通过具名提供方把工作委
 
 | 键 | 含义 |
 |---|---|
-| `profiles` | 将面向模型的名称映射到 `{ description, provider, model, instruction?, reasoningEffort? }` 的字典。名称和必填字段都不能为空；provider/model 值是不透明字符串，可以指向外部适配器。可选 instruction 是仅对子代理生效的系统提示词 section；可选 reasoningEffort 是由确切模型路由校验的不透明适配器自有 ID。 |
+| `profiles` | 将面向模型的名称映射到 `{ description, provider, model, instruction?, reasoningEffort? }` 的字典。名称和必填字段都不能为空；provider/model 值是不透明字符串，可以指向外部适配器。可选 instruction 是仅对子代理生效的系统提示词 section；可选 reasoningEffort 是由确切模型路由校验的不透明适配器自有 ID。持久化用户配置可将任一可选字段设为 `null`，以清除继承的组合值；`modelSelection()` 会从返回的配置中移除这些重置标记。 |
 | `allowDirectModelSelection` | 兼容委派工具是否公开直接 provider/model 参数；默认 `false`。 |
 
 设置提交后会发出 `subagent/model-selection-updated`；消费方会重新读取 `modelSelection()`，而不会保留由设置提供方拥有的对象。没有设置提供方时，组合配置保持权威。[模型配置 Agent Note](../../../.agents/notes/implemented/feature/2026-08-17-subagent-model-profiles.md)记录了解析与持久化理由。

@@ -74,7 +74,7 @@ import {
   SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
   validateSubagentModelSelectionSettings,
 } from './model-selection.ts'
-import type { SubagentModelSelectionSettings } from './model-selection.ts'
+import type { SubagentModelSelectionConfig, SubagentModelSelectionSettings } from './model-selection.ts'
 
 export * from './out-of-process.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
@@ -83,7 +83,12 @@ export {
   SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
   validateSubagentModelSelectionSettings,
 } from './model-selection.ts'
-export type { SubagentModelProfile, SubagentModelSelectionSettings } from './model-selection.ts'
+export type {
+  SubagentModelProfile,
+  SubagentModelProfileConfig,
+  SubagentModelSelectionConfig,
+  SubagentModelSelectionSettings,
+} from './model-selection.ts'
 export type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
@@ -187,7 +192,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** Composition defaults for shared subagent model selection. */
-export type Config = SubagentModelSelectionSettings
+export type Config = SubagentModelSelectionConfig
 
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends Service {
@@ -197,13 +202,13 @@ export class SubagentRuntime extends Service {
       description: z.string().required(),
       provider: z.string().required(),
       model: z.string().required(),
-      instruction: z.string(),
-      reasoningEffort: z.string(),
+      instruction: z.union([z.string(), z.const(null)]),
+      reasoningEffort: z.union([z.string(), z.const(null)]),
     })).default({}),
   })
 
   private providers = new Map<string, SubagentProvider>()
-  private modelSelectionSource: () => SubagentModelSelectionSettings
+  private modelSelectionSource: () => SubagentModelSelectionConfig
   private continuations: SubagentContinuationManager | undefined
   /** Deployment contributions composed into unpublished continuable children. */
   private readonly setupRegistry = new SubagentActivationSetupRegistry()

@@ -3,6 +3,7 @@
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import { xaiProvider } from '@earendil-works/pi-ai/providers/xai'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -60,6 +61,8 @@ export interface XaiAdapterOptions {
   options: () => XaiConnectionOptions
   /** Provider-neutral OAuth lifecycle service. */
   modelAuth: ModelAuth
+  /** Resolve the optional durable attachment service at request time. */
+  resolveAttachments?: () => AttachmentStore | undefined
   /** HTTP implementation, injectable for deterministic tests. */
   fetch?: typeof fetch
 }
@@ -218,6 +221,7 @@ export class XaiAdapter extends LlmAdapter {
           throw authFailure(error)
         }
       },
+      resolveAttachments: config.resolveAttachments,
     })
   }
 

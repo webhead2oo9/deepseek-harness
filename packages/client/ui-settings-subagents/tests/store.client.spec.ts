@@ -161,6 +161,12 @@ describe('SubagentsController', () => {
       instruction: 'Line one.\nLine two.',
       reasoningEffort: 'max',
     })
+    expect(readValue({
+      allowDirectModelSelection: false,
+      profiles: { reset: { description: 'reset', provider: 'p', model: 'm', instruction: null, reasoningEffort: null } },
+    }).profiles.reset).toEqual({
+      description: 'reset', provider: 'p', model: 'm', instruction: null, reasoningEffort: null,
+    })
     const prototypeName = readValue(JSON.parse('{"allowDirectModelSelection":false,"profiles":{"__proto__":{"description":"d","provider":"p","model":"m"}}}'))
     expect(Object.hasOwn(prototypeName.profiles, '__proto__')).toBe(true)
     for (const invalid of [null, 'bad']) expect(() => readValue(invalid)).toThrow('not an object')

@@ -2,41 +2,38 @@
 
 [English](README.md) | 中文
 
-由 [Exa](https://exa.ai) 支持的 `WebSearchProvider`，用于 harness [web 能力 seam](../web/README.md)（`ctx.web`）。它调用 Exa 的 `POST /search` 端点并请求高亮摘要内容，把扁平 `results[]` 映射为 seam 规范化的 `WebSearchResult`。
+由 [Exa](https://exa.ai) 支持的 `WebSearchProvider`，用于 harness [web 能力 seam](../web/README.md)（`ctx.web`）。它调用 Exa `POST /search` 并请求重点摘要，将结果元数据映射为 `WebSearchResult`。
 
-这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有 `ctx.web` 键，也不注册面向模型的工具（后者属于 `@deepseek-ai/dsh-tool-web`）。与 `@deepseek-ai/dsh-llm-deepseek` 一样，它是函数／命名空间插件（`inject: ['web']`），负责注册后端，而非默认导出服务。
+这是实现包，负责向 `ctx.web` 注册后端；面向模型的 `web_search` 工具由 [`@deepseek-ai/dsh-tool-web`](../tool-web/README.md) 拥有。
 
 ## 配置
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `apiKey` | `$EXA_API_KEY` | Exa API 密钥。为空或缺失时提供方不可用。 |
-| `baseURL` | `https://api.exa.ai` | 端点基址；追加 `/search`。无法解析时提供方不可用。 |
-| `searchType` | `auto` | 以 Exa `type` 发送的检索模式：`auto`（由 Exa 决定）、`keyword` 或 `neural`。 |
-| `numResults` | （未设置） | 请求不含 `maxResults` 时使用的默认结果数。未设置时不发送默认值。必须是正整数。 |
-| `highlightsPerResult` | `1` | 每个结果请求的 highlight 句子数（Exa `highlightsPerUrl`）。必须是正整数。 |
+| `apiKey` | — | 为兼容性保留的字面量密钥。优先使用 `apiKeyEnv`。 |
+| `apiKeyEnv` | `EXA_API_KEY` | 每次搜索解析的凭据引用。 |
+| `baseURL` | `https://api.exa.ai` | Exa 端点基址；追加 `/search`。 |
+| `searchType` | `auto` | 标准检索模式：`auto`、`fast` 或 `instant`。 |
+| `numResults` | 未设置 | 仅在共享请求没有 `maxResults` 时作为默认值。 |
+| `moderation` | `true` | 请求 Exa 过滤不安全结果。 |
+| `highlightsMaxCharacters` | 未设置 | 每个结果的摘要字符上限；未设置时使用 Exa 默认选择。 |
+| `maxAgeHours` | 未设置 | 缓存内容时效：`0` 获取最新内容，`-1` 仅使用缓存。 |
 
-```yaml
-- id: web-search-exa
-  name: '@deepseek-ai/dsh-web-search-exa'
-  config:
-    apiKey: !!js process.env.EXA_API_KEY
-```
+提供方注册 `web-search-exa` 设置命名空间。插件页通过凭据域写入 API 密钥，因此设置响应不会返回密钥。
 
 ## 映射
 
-Exa 返回扁平 `results[]`，不返回生成答案，因此省略 `content`。每项结果映射为 `WebSearchSource`：`url` ← `url`、`title` ← `title`、`snippet` ← 第一个非空的 `highlights[]` 条目（没有高亮摘要的结果缺少可移植的 snippet，会被丢弃）、`publishedAt` ← `publishedDate`。请求的 `maxResults` 优先于已配置的默认 `numResults`，并作为 Exa `numResults` 发送，以优化成本和延迟；最终上限由 seam 强制执行。提供方失败（HTTP 错误、网络失败、响应体无法解析或结构不符）以 `WebError` `WEB_PROVIDER_ERROR` 呈现；中止请求以 `WEB_ABORTED` 呈现。HTTP 重定向会在访问 `Location` 指向的目标之前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。
+每个 Exa 结果贡献 URL、可选标题、第一条非空高亮摘要和发布日期。没有高亮摘要的结果仍可作为引用。web 能力会应用最终结果上限。携带凭据的请求会在跟随 `Location` 之前拒绝重定向；已取消的操作返回 `WEB_ABORTED`。
 
 ## 模型体验
 
-通过 [`dsh-tool-web`](../tool-web/README.md) 间接影响；该工具保留此提供方经 `maxResults` 限制的 URL、标题、首条 highlight 与发布日期，或将确切的错误消息 `Exa search aborted`、`Exa search request failed: <error>` 和 `Exa returned an unprocessable response body: <error>` 置于消费方的错误包装层内；生成答案与提供方私有字段不进入上下文。
+`dsh-tool-web` 提供模型可见工具。模型只接收规范化且受限的来源和提供方失败；未映射到共享结果的 Exa 响应字段不会进入模型上下文。
 
 #### KV Cache 影响
 
-不会直接导致 KV Cache 失效；请求前缀变更由上述消费方负责。
+不会直接导致 KV Cache 失效；请求前缀变更由 web 工具消费方负责。
 
 ## 已知限制与暂缓事项
 
-- **没有非空白高亮摘要的结果会被整个丢弃**：没有可映射的可移植 snippet，因此返回源可能少于请求数量。
-- **只公开 `searchType`／`numResults`／`highlightsPerResult`**：Exa 的其他控制项（livecrawl、category、域名／日期过滤条件、全文内容）等待提供方无关的 Service Definition 字段（见 [seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)）。
-- **按错误形状分类中止**：只有 `DOMException` 且名为 `AbortError` 时才映射为 `WEB_ABORTED`；携带自定义原因的中止（例如 `dsh-timeout` 的 `TimeoutReason`）会呈现为 `WEB_PROVIDER_ERROR`。
+- 提供方只支持普通 Exa 检索模式。深度研究、综合输出和流式响应需要独立的面向模型能力。
+- 由于当前提供方无法遵守统一语义，类别、域名、日期和页面内容控制不在提供方无关请求中。
